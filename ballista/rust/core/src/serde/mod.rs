@@ -32,12 +32,26 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{convert::TryInto, io::Cursor};
+use arrow_flight::sql::ProstMessageExt;
 
 pub use generated::ballista as protobuf;
 
 pub mod generated;
 pub mod physical_plan;
 pub mod scheduler;
+
+impl ProstMessageExt for protobuf::Action {
+    fn type_url() -> &'static str {
+        concat!("type.googleapis.com/arrow.flight.protocol.sql.", stringify!($name))
+    }
+
+    fn as_any(&self) -> prost_types::Any {
+        prost_types::Any {
+            type_url: protobuf::Action::type_url().to_string(),
+            value: self.encode_to_vec(),
+        }
+    }
+}
 
 pub fn decode_protobuf(bytes: &[u8]) -> Result<BallistaAction, BallistaError> {
     let mut buf = Cursor::new(bytes);
@@ -164,7 +178,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> BallistaCodec<T, 
 macro_rules! convert_required {
     ($PB:expr) => {{
         if let Some(field) = $PB.as_ref() {
-            Ok(field.try_into()?)
+            Ok(field.try_into().map_err(|_| proto_error("Failed to convert!"))?)
         } else {
             Err(proto_error("Missing required field in protobuf"))
         }

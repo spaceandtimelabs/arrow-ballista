@@ -347,11 +347,11 @@ impl ExecutionPlan for ShuffleWriterExec {
             .and_then(|part_loc| async move {
                 // build metadata result batch
                 let num_writers = part_loc.len();
-                let mut partition_builder = UInt32Builder::new();
+                let mut partition_builder = UInt32Builder::with_capacity();
                 let mut path_builder = StringBuilder::new();
-                let mut num_rows_builder = UInt64Builder::new();
-                let mut num_batches_builder = UInt64Builder::new();
-                let mut num_bytes_builder = UInt64Builder::new();
+                let mut num_rows_builder = UInt64Builder::with_capacity();
+                let mut num_batches_builder = UInt64Builder::with_capacity();
+                let mut num_bytes_builder = UInt64Builder::with_capacity();
 
                 for loc in &part_loc {
                     path_builder.append_value(loc.path.clone());
