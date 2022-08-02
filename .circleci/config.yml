@@ -1,0 +1,60 @@
+# CircleCI configuration file
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: rust:1.62.1-buster
+    steps:
+      - checkout
+      - run: |
+          git tag circle-$CIRCLE_BUILD_NUM
+          git push origin --tags
+          apt-get update
+          apt-get install -y cmake maven
+          mkdir -p /root/.m2 
+          echo '<settings><servers><server><id>snapshots</id><username>${repo.login}</username><password>${repo.pwd}</password></server></servers><profiles><profile><repositories><repository><snapshots/><id>snapshots</id><name>sxt-m2-virtual</name><url>https://spaceandtime.jfrog.io/artifactory/sxt-m2-virtual</url></repository></repositories><id>artifactory</id></profile></profiles><activeProfiles><activeProfile>artifactory</activeProfile></activeProfiles></settings>' > /root/.m2/settings.xml
+          mvn org.apache.maven.plugins:maven-dependency-plugin:get -U -Dartifact=org.apache.arrow:flight-jdbc-driver:9.0.0-SNAPSHOT -Drepo.id=snapshots -Drepo.login=$ARTIFACTORY_USER -Drepo.pwd="$ARTIFACTORY_API_KEY" -Dtransitive=false
+          mvn org.apache.maven.plugins:maven-dependency-plugin:copy -U -Dartifact=org.apache.arrow:flight-jdbc-driver:9.0.0-SNAPSHOT -DoutputDirectory=/root/project
+          mkdir -p $HOME/d/protoc
+          cd $HOME/d/protoc
+          export PROTO_ZIP="protoc-21.4-linux-x86_64.zip"
+          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v21.4/$PROTO_ZIP
+          unzip $PROTO_ZIP
+          export PATH=$PATH:$HOME/d/protoc/bin
+          protoc --version
+          cd -
+          cargo build --release --all
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - project/flight-jdbc-driver-9.0.0-SNAPSHOT.jar
+            - project/target/release/ballista-scheduler
+            - project/target/release/ballista-executor
+            - project/scheduler.Dockerfile
+            - project/executor.Dockerfile
+            - project/sqlline.Dockerfile
+
+  deploy:
+    docker:
+      - image: docker:17.05.0-ce-git
+    steps:
+      - setup_remote_docker
+      - attach_workspace:
+          at: /root
+      - run: |
+          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
+          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker build -f sqlline.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-sqlline:$CIRCLE_BUILD_NUM
+
+workflows:
+  maven_package:
+    jobs:
+      - build
+      - deploy:
+          requires:
+            - build
