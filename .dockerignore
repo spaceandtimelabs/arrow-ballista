@@ -4,7 +4,9 @@ ci
 conbench
 dev
 **/docs
-**/target
+target/
 **/CHANGELOG.md
 **/tests
 **/data
+!target/release/ballista-scheduler
+!target/release/ballista-executor
