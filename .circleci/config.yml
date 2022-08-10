@@ -8,6 +8,8 @@ jobs:
     steps:
       - checkout
       - run: |
+          apt-get update
+          apt-get install -y cmake
           cargo build --release --all
           mkdir -p /root/project/artifacts
           mv /root/project/target/release/ballista-scheduler /root/project/artifacts/ballista-scheduler-${CIRCLE_SHA1:0:7}
