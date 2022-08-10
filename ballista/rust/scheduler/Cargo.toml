@@ -43,8 +43,8 @@ ballista-core = { path = "../core", features = [], optional = false }
 base64 = { version = "0.13", default-features = false }
 clap = { version = "3", features = ["derive", "cargo"] }
 configure_me = "0.4.0"
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", branch = "master", features = [], optional = false }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", branch = "master", features = [], optional = false }
+datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "3eb55e9a", features = [], optional = false }
+datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "3eb55e9a", features = [], optional = false }
 env_logger = "0.9"
 etcd-client = { version = "0.9", optional = true }
 flatbuffers = { version = "2.1.2" }
