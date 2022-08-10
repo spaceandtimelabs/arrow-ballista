@@ -1,0 +1,21 @@
+# CircleCI configuration file
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: rust:alpine3.16
+    steps:
+      - checkout
+      - run: |
+          cargo build --release --all
+          mkdir -p /root/project/artifacts
+          mv /root/project/target/release/ballista-scheduler /root/project/artifacts/ballista-scheduler-${CIRCLE_SHA1:0:7}
+          mv /root/project/target/release/ballista-executor /root/project/artifacts/ballista-executor-${CIRCLE_SHA1:0:7}
+      - store_artifacts:
+          path: /root/project/artifacts
+
+workflows:
+  maven_package:
+    jobs:
+      - build
