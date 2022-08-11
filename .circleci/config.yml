@@ -21,10 +21,9 @@ jobs:
           cargo build --release --all
           mkdir -p /root/project/artifacts
       - persist_to_workspace:
-          root: /root/project
+          root: /root
           paths:
-            - target/release/ballista-scheduler
-            - target/release/ballista-executor
+            - project/
 
   deploy:
     docker:
