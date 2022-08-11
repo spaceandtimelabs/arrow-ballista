@@ -8,6 +8,8 @@ jobs:
     steps:
       - checkout
       - run: |
+          git tag circle-$CIRCLE_BUILD_NUM
+          git push origin --tags
           apt-get update
           apt-get install -y cmake
           mkdir -p $HOME/d/protoc
