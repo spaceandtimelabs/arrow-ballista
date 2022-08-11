@@ -6,11 +6,7 @@ services:
       dockerfile: scheduler.Dockerfile
     ports:
       - "50050:50050"
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 50050" ]
-      interval: "1s"
-      retries: 30
-      
+
   executor:
     build:
       context: .
@@ -19,8 +15,7 @@ services:
     ports:
       - "50051:50051"
     depends_on:
-      scheduler:
-        condition: service_healthy
+      - scheduler
     links:
       - scheduler
 
