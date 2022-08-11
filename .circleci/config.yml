@@ -10,8 +10,10 @@ jobs:
       - run: |
           git tag circle-$CIRCLE_BUILD_NUM
           git push origin --tags
+          mkdir -p /root/.m2 
+          echo '<settings><servers><server><id>snapshots</id><username>${repo.login}</username><password>${repo.pwd}</password></server></servers><mirrors><mirror><id>artifactory</id><name>artifactory</name><url>https://spaceandtime.jfrog.io/artifactory/sxt-m2-virtual</url><mirrorOf>snapshots</mirrorOf></mirror></mirrors></settings>' > /root/.m2/settings.xml
           apt-get update
-          apt-get install -y cmake
+          apt-get install -y cmake maven
           mkdir -p $HOME/d/protoc
           cd $HOME/d/protoc
           export PROTO_ZIP="protoc-21.4-linux-x86_64.zip"
@@ -21,14 +23,17 @@ jobs:
           protoc --version
           cd -
           cargo build --release --all
-          mkdir -p /root/project/artifacts
+          mvn org.apache.maven.plugins:maven-dependency-plugin:get -U -Dartifact=org.apache.arrow:flight-jdbc-driver:9.0.0-SNAPSHOT -Drepo.id=snapshots -Drepo.login=$ARTIFACTORY_USER -Drepo.pwd="$ARTIFACTORY_API_KEY" -Dtransitive=false
+          mvn org.apache.maven.plugins:maven-dependency-plugin:copy -U -Dartifact=org.apache.arrow:flight-jdbc-driver:9.0.0-SNAPSHOT -DoutputDirectory=/root/project
       - persist_to_workspace:
           root: /root
           paths:
+            - project/flight-jdbc-driver-9.0.0-SNAPSHOT.jar
             - project/target/release/ballista-scheduler
             - project/target/release/ballista-executor
             - project/scheduler.Dockerfile
             - project/executor.Dockerfile
+            - project/sqlline.Dockerfile
 
   deploy:
     docker:
@@ -40,9 +45,11 @@ jobs:
       - run: |
           docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
           docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker build -f sqlline.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
           docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
           docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
           docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-sqlline:$CIRCLE_BUILD_NUM
 
 workflows:
   maven_package:
