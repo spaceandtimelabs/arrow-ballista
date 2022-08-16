@@ -34,14 +34,14 @@ snmalloc = ["snmalloc-rs"]
 
 [dependencies]
 anyhow = "1"
-arrow = "20.0.0"
-arrow-flight = "20.0.0"
+arrow = { git = "https://github.com/apache/arrow-rs.git", rev = "fdf51c04e2b60b89e91da401f14acac91d072652" }
+arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "fdf51c04e2b60b89e91da401f14acac91d072652" }
 async-trait = "0.1.41"
-ballista-core = { path = "../core", features = [], optional = false }
+ballista-core = { path = "../core" }
 chrono = { version = "0.4", default-features = false }
 configure_me = "0.4.0"
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "3eb55e9a", features = [], optional = false }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "3eb55e9a", features = [], optional = false }
+datafusion = { rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd", git = "https://github.com/spaceandtimelabs/arrow-datafusion.git" }
+datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd" }
 env_logger = "0.9"
 futures = "0.3"
 hyper = "0.14.4"

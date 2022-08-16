@@ -32,9 +32,9 @@ simd = ["datafusion/simd"]
 snmalloc = ["snmalloc-rs"]
 
 [dependencies]
-ballista = { path = "../ballista/rust/client", features = [], optional = false }
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "3eb55e9a", features = [], optional = false }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "3eb55e9a", features = [], optional = false }
+ballista = { path = "../ballista/rust/client" }
+datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd" }
+datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd" }
 env_logger = "0.9"
 futures = "0.3"
 mimalloc = { version = "0.1", optional = true, default-features = false }
@@ -47,4 +47,4 @@ structopt = { version = "0.3", default-features = false }
 tokio = { version = "^1.0", features = ["macros", "rt", "rt-multi-thread", "parking_lot"] }
 
 [dev-dependencies]
-ballista-core = { path = "../ballista/rust/core", features = [], optional = false }
+ballista-core = { path = "../ballista/rust/core" }
