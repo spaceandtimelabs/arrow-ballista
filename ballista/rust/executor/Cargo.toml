@@ -38,6 +38,7 @@ arrow = { git = "https://github.com/apache/arrow-rs.git", rev = "fdf51c04e2b60b8
 arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "fdf51c04e2b60b89e91da401f14acac91d072652" }
 async-trait = "0.1.41"
 ballista-core = { path = "../core" }
+base64 = { version = "0.13", default-features = false }
 chrono = { version = "0.4", default-features = false }
 configure_me = "0.4.0"
 datafusion = { rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd", git = "https://github.com/spaceandtimelabs/arrow-datafusion.git" }

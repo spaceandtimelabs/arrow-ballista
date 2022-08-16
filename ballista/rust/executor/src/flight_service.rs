@@ -17,6 +17,7 @@
 
 //! Implementation of the Apache Arrow Flight protocol that wraps an executor.
 
+use std::convert::TryFrom;
 use std::fs::File;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -46,6 +47,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
+use tonic::metadata::MetadataValue;
 
 type FlightDataSender = Sender<Result<FlightData, Status>>;
 type FlightDataReceiver = Receiver<Result<FlightData, Status>>;
@@ -134,7 +136,21 @@ impl FlightService for BallistaFlightService {
         &self,
         _request: Request<Streaming<HandshakeRequest>>,
     ) -> Result<Response<Self::HandshakeStream>, Status> {
-        Err(Status::unimplemented("handshake"))
+        println!("--- do_handshake ---");
+        let token = uuid::Uuid::new_v4();
+
+        let result = HandshakeResponse {
+            protocol_version: 0,
+            payload: token.as_bytes().to_vec(),
+        };
+        let result = Ok(result);
+        let output = futures::stream::iter(vec![result]);
+        let str = format!("Bearer {}", token.to_string());
+        let mut resp: Response<Pin<Box<dyn Stream<Item = Result<_, Status>> + Sync + Send>>> = Response::new(Box::pin(output));
+        let md = MetadataValue::try_from(str)
+            .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
+        resp.metadata_mut().insert("authorization", md);
+        Ok(resp)
     }
 
     async fn list_flights(
