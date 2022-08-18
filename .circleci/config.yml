@@ -57,7 +57,7 @@ jobs:
           helm install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
 
 workflows:
-  maven_package:
+  main_workflow:
     jobs:
       - build
       - deploy_docker:
