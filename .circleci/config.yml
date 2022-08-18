@@ -29,7 +29,7 @@ jobs:
             - project/scheduler.Dockerfile
             - project/executor.Dockerfile
 
-  deploy:
+  deploy_docker:
     docker:
       - image: docker:17.05.0-ce-git
     steps:
@@ -43,10 +43,26 @@ jobs:
           docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
           docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
 
+  deploy_helm:
+    docker:
+      - image: mcr.microsoft.com/azure-cli
+    steps:
+      - attach_workspace:
+          at: /root
+      - run: |
+          cd /root/project/helm/ballista          
+          az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
+          kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+
 workflows:
   maven_package:
     jobs:
       - build
-      - deploy:
+      - deploy_docker:
           requires:
             - build
+      - deploy_helm:
+          requires:
+            - deploy_docker
