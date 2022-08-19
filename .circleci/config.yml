@@ -41,7 +41,7 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
-          export $DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
           docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
           docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
@@ -55,7 +55,7 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
-          export $DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           cd /root/project/helm/ballista     
