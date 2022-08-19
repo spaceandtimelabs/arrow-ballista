@@ -10,7 +10,7 @@ jobs:
       - run: |
           export DOCKER_TAG=$(echo $(git describe --tags --abbrev=0) | awk -F. -v OFS=. '{$2 += 1 ; print}')
           echo $DOCKER_TAG > /root/project/docker-tag.txt
-          git tag circle-$DOCKER_TAG
+          git tag $DOCKER_TAG
           git push origin --tags
           apt-get update
           apt-get install -y cmake
