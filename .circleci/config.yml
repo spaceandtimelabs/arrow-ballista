@@ -8,7 +8,9 @@ jobs:
     steps:
       - checkout
       - run: |
-          git tag circle-$CIRCLE_WORKFLOW_ID
+          export DOCKER_TAG=$CIRCLE_BUILD_NUM
+          echo $DOCKER_TAG > /root/project/docker-tag.txt
+          git tag circle-$DOCKER_TAG
           git push origin --tags
           apt-get update
           apt-get install -y cmake
@@ -24,6 +26,7 @@ jobs:
       - persist_to_workspace:
           root: /root
           paths:
+            - project/docker-tag.txt
             - project/helm
             - project/target/release/ballista-scheduler
             - project/target/release/ballista-executor
@@ -38,11 +41,12 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
-          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_WORKFLOW_ID
-          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_WORKFLOW_ID
+          export $DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
+          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
           docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_WORKFLOW_ID
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_WORKFLOW_ID
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
 
   deploy_helm:
     docker:
@@ -51,14 +55,17 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
+          export $DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           cd /root/project/helm/ballista     
           az login --username=$AZ_USER --password=$AZ_PASS
           az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
           kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_WORKFLOW_ID --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
-          kubectl rollout status --watch deployment ballista-scheduler
-          kubectl rollout status --watch deployment ballista-executor
+          helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          kubectl rollout status --watch --timeout=1m deployment ballista-scheduler
+          kubectl rollout status --watch --timeout=1m deployment ballista-executor
 
 workflows:
   main_workflow:
