@@ -38,11 +38,11 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
-          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
-          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
-          docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker build -f scheduler.Dockerfile . -t $DOCKER_HOST/$DOCKER_REPO/ballista-scheduler:$CIRCLE_BUILD_NUM
+          docker build -f executor.Dockerfile . -t $DOCKER_HOST/$DOCKER_REPO/ballista-executor:$CIRCLE_BUILD_NUM
+          docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY $DOCKER_HOST
+          docker push $DOCKER_HOST/$DOCKER_REPO/ballista-scheduler:$CIRCLE_BUILD_NUM
+          docker push $DOCKER_HOST/$DOCKER_REPO/ballista-executor:$CIRCLE_BUILD_NUM
 
   deploy_helm:
     docker:
@@ -51,11 +51,12 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
-          cd /root/project/helm/ballista          
+          cd /root/project/helm/ballista     
+          az login --username=$AZ_USER --password=$AZ_PASS
           az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
-          kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
+          kubectl create secret docker-registry regcred --docker-server=https://$DOCKER_HOST/$DOCKER_REPO --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          helm install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=$DOCKER_HOST/$DOCKER_REPO
 
 workflows:
   main_workflow:
