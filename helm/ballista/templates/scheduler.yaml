@@ -10,7 +10,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "ballista.selectorLabels" . | nindent 6 }}
+      run: ballista-scheduler
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -18,7 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "ballista.selectorLabels" . | nindent 8 }}
+        run: ballista-scheduler
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -28,7 +28,7 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: {{ .Chart.Name }}-scheduler
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}/{{ .Values.image.scheduler }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -64,7 +64,7 @@ kind: Service
 metadata:
   name: ballista-scheduler
   labels:
-    {{- include "ballista.labels" . | nindent 4 }}
+    run: ballista-scheduler
 spec:
   type: {{ .Values.service.scheduler.type }}
   ports:
@@ -73,4 +73,4 @@ spec:
       protocol: TCP
       name: flightsql
   selector:
-    {{- include "ballista.selectorLabels" . | nindent 4 }}
+    run: ballista-scheduler

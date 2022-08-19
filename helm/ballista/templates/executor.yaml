@@ -10,7 +10,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "ballista.selectorLabels" . | nindent 6 }}
+      run: ballista-executor
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -18,7 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "ballista.selectorLabels" . | nindent 8 }}
+        run: ballista-executor
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -28,7 +28,7 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: {{ .Chart.Name }}-executor
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}/{{ .Values.image.executor }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -67,7 +67,7 @@ kind: Service
 metadata:
   name: ballista-executor
   labels:
-    {{- include "ballista.labels" . | nindent 4 }}
+    run: ballista-executor
 spec:
   type: {{ .Values.service.executor.type }}
   ports:
@@ -76,4 +76,4 @@ spec:
       protocol: TCP
       name: flight
   selector:
-    {{- include "ballista.selectorLabels" . | nindent 4 }}
+    run: ballista-executor
