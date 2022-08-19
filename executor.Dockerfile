@@ -4,4 +4,4 @@ COPY ./target/release/ballista-executor .
 
 EXPOSE 50051
 
-CMD ./ballista-executor --scheduler-host=$SCHEDULER_HOST
+CMD ./ballista-executor --scheduler-host=$SCHEDULER_HOST --external-host=$EXTERNAL_HOST
