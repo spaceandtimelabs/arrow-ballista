@@ -8,7 +8,7 @@ jobs:
     steps:
       - checkout
       - run: |
-          git tag circle-$CIRCLE_BUILD_NUM
+          git tag circle-$CIRCLE_WORKFLOW_ID
           git push origin --tags
           apt-get update
           apt-get install -y cmake
@@ -38,11 +38,11 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
-          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
-          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_WORKFLOW_ID
+          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_WORKFLOW_ID
           docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_BUILD_NUM
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_BUILD_NUM
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$CIRCLE_WORKFLOW_ID
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$CIRCLE_WORKFLOW_ID
 
   deploy_helm:
     docker:
@@ -56,7 +56,9 @@ jobs:
           az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
           kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_WORKFLOW_ID --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          kubectl rollout status --watch deployment ballista-scheduler
+          kubectl rollout status --watch deployment ballista-executor
 
 workflows:
   main_workflow:
