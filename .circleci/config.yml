@@ -24,6 +24,7 @@ jobs:
       - persist_to_workspace:
           root: /root
           paths:
+            - project/helm
             - project/target/release/ballista-scheduler
             - project/target/release/ballista-executor
             - project/scheduler.Dockerfile
