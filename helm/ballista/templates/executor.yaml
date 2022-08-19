@@ -69,9 +69,9 @@ metadata:
   labels:
     {{- include "ballista.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.service.executor.type }}
   ports:
-    - port: {{ .Values.service.port }}
+    - port: {{ .Values.service.executor.port }}
       targetPort: 50051
       protocol: TCP
       name: flight

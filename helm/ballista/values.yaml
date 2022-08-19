@@ -40,8 +40,12 @@ securityContext: {}
   # runAsUser: 1000
 
 service:
-  type: ClusterIP
-  port: 50050
+  scheduler:
+    type: ClusterIP
+    port: 50050
+  executor:
+    type: ClusterIP
+    port: 50051
 
 ingress:
   enabled: false
