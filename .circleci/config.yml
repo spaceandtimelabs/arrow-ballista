@@ -56,7 +56,7 @@ jobs:
           az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
           kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$CIRCLE_BUILD_NUM --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
 
 workflows:
   main_workflow:
