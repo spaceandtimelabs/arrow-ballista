@@ -8,10 +8,14 @@ jobs:
     steps:
       - checkout
       - run: |
-          export DOCKER_TAG=$(echo $(git describe --tags --abbrev=0) | awk -F. -v OFS=. '{$2 += 1 ; print}')
+          export DOCKER_TAG=$(git tag --points-at HEAD)
+          if [ -z "$DOCKER_TAG" ]
+          then
+            export DOCKER_TAG=$(echo $(git describe --tags --abbrev=0) | awk -F. -v OFS=. '{$2 += 1 ; print}')
+            git tag $DOCKER_TAG
+            git push origin --tags
+          fi
           echo $DOCKER_TAG > /root/project/docker-tag.txt
-          git tag $DOCKER_TAG
-          git push origin --tags
           apt-get update
           apt-get install -y cmake
           mkdir -p $HOME/d/protoc
@@ -64,8 +68,8 @@ jobs:
           kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
-          kubectl rollout status --watch --timeout=1m deployment ballista-scheduler
-          kubectl rollout status --watch --timeout=1m deployment ballista-executor
+          kubectl rollout status --watch --timeout=2m deployment ballista-scheduler
+          kubectl rollout status --watch --timeout=2m deployment ballista-executor
 
 workflows:
   main_workflow:
