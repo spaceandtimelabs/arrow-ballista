@@ -31,7 +31,7 @@ rust-version = "1.57"
 name = "datafusion._internal"
 
 [dependencies]
-datafusion = { features = ["pyarrow"], rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd", git = "https://github.com/spaceandtimelabs/arrow-datafusion.git" }
+datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "fb52f0632a7d5b062779ddefeb924213b01fbba0", features = ["pyarrow"] }
 pyo3 = { version = "0.16", features = ["extension-module", "abi3", "abi3-py36"] }
 rand = "0.7"
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync"] }

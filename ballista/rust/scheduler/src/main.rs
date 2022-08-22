@@ -145,28 +145,6 @@ async fn start_server(
         .context("Could not start grpc server")
 }
 
-fn check_auth(req: Request<()>) -> Result<Request<()>, Status> {
-    println!("--- check_auth ---");
-    for md in req.metadata().iter() {
-        println!("{:?}", md);
-    }
-
-    // trying to authenticate
-    let user = req.metadata().get("user");
-    let password = req.metadata().get("password");
-    if user.is_some() && password.is_some() {
-        return Ok(req);
-    }
-
-    match req.metadata().get("authorization") {
-        Some(t) => {
-            println!("Token: {:?}", t);
-            Ok(req)
-        },
-        _ => Err(Status::unauthenticated("No valid auth token")),
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // parse options

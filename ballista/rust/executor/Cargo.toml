@@ -34,15 +34,15 @@ snmalloc = ["snmalloc-rs"]
 
 [dependencies]
 anyhow = "1"
-arrow = { git = "https://github.com/apache/arrow-rs.git", rev = "fdf51c04e2b60b89e91da401f14acac91d072652" }
-arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "fdf51c04e2b60b89e91da401f14acac91d072652" }
+arrow = { git = "https://github.com/apache/arrow-rs.git", rev = "68934f0fa5da62ae9fcbb753d1dfd8f672a4eb1e" }
+arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "68934f0fa5da62ae9fcbb753d1dfd8f672a4eb1e" }
 async-trait = "0.1.41"
 ballista-core = { path = "../core" }
 base64 = { version = "0.13", default-features = false }
 chrono = { version = "0.4", default-features = false }
 configure_me = "0.4.0"
-datafusion = { rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd", git = "https://github.com/spaceandtimelabs/arrow-datafusion.git" }
-datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "e7724ed8e8a4fe893489caa94292eed7375d96dd" }
+datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "fb52f0632a7d5b062779ddefeb924213b01fbba0" }
+datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "fb52f0632a7d5b062779ddefeb924213b01fbba0" }
 env_logger = "0.9"
 futures = "0.3"
 hyper = "0.14.4"
@@ -50,7 +50,7 @@ log = "0.4"
 parking_lot = "0.12"
 snmalloc-rs = { version = "0.3", optional = true }
 tempfile = "3"
-tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "parking_lot"] }
+tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "parking_lot", "signal"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = "0.8.0"
 tracing = "0.1.36"
