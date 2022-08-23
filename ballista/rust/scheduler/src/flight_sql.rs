@@ -28,8 +28,6 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tonic::{Request, Response, Status, Streaming};
-use ballista_core::serde::decode_protobuf;
-use ballista_core::serde::scheduler::Action as BallistaAction;
 
 use crate::scheduler_server::event::QueryStageSchedulerEvent;
 use crate::scheduler_server::SchedulerServer;
@@ -52,6 +50,9 @@ use tokio::time::sleep;
 use tonic::codegen::futures_core::Stream;
 use tonic::metadata::MetadataValue;
 use uuid::Uuid;
+use arrow_flight::flight_service_client::FlightServiceClient;
+use ballista_core::serde::protobuf::action::ActionType::FetchPartition;
+use ballista_core::utils::create_grpc_client_connection;
 
 pub struct FlightSqlServiceImpl {
     server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode>,
@@ -182,12 +183,21 @@ impl FlightSqlServiceImpl {
     ) -> Result<Vec<FlightEndpoint>, Status> {
         let mut fieps: Vec<_> = vec![];
         for loc in completed.partition_location.iter() {
+            let (host, port) = if let Some(ref md) = loc.executor_meta {
+                (md.host.clone(), md.port)
+            } else {
+                Err(Status::internal(
+                    "Invalid partition location, missing executor metadata".to_string(),
+                ))?
+            };
             let fetch = if let Some(ref id) = loc.partition_id {
                 let fetch = protobuf::FetchPartition {
                     job_id: id.job_id.clone(),
                     stage_id: id.stage_id,
                     partition_id: id.partition_id,
                     path: loc.path.clone(),
+                    host: host.clone(),
+                    port,
                 };
                 protobuf::Action {
                     action_type: Some(protobuf::action::ActionType::FetchPartition(
@@ -198,19 +208,13 @@ impl FlightSqlServiceImpl {
             } else {
                 Err(Status::internal("Error getting partition ID".to_string()))?
             };
-            let authority = if let Some(ref md) = loc.executor_meta {
-                format!("{}:{}", md.host, md.port) // TODO: my host & port
-            } else {
-                Err(Status::internal(
-                    "Invalid partition location, missing executor metadata".to_string(),
-                ))?
-            };
             if let Some(ref stats) = loc.partition_stats {
                 *num_rows += stats.num_rows;
                 *num_bytes += stats.num_bytes;
             } else {
                 Err(Status::internal("Error getting stats".to_string()))?
             }
+            let authority = format!("{}:{}", &host, &port); // TODO: my host & port
             let loc = Location {
                 uri: format!("grpc+tcp://{}", authority),
             };
@@ -429,6 +433,33 @@ impl FlightSqlService for FlightSqlServiceImpl {
                 .map_err(|e| Status::internal(format!("{:?}", e)))?
                 .ok_or(Status::internal("Expected an Action but got None!"))?;
             println!("action={:?}", action);
+            let (host, port) = match &action.action_type {
+                Some(FetchPartition(fp)) => (fp.host.clone(), fp.port),
+                None => Err(Status::internal("Expected an ActionType but got None!"))?,
+                _ => Err(Status::internal("Unknown ActionType!"))?
+            };
+
+            let addr = format!("http://{}:{}", host, port);
+            println!("BallistaClient connecting to {}", addr);
+            let connection =
+                create_grpc_client_connection(addr.clone())
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!(
+                            "Error connecting to Ballista scheduler or executor at {}: {:?}",
+                            addr, e
+                        ))
+                    })?;
+            let mut flight_client = FlightServiceClient::new(connection);
+            let buf = action.encode_to_vec();
+            let request = Request::new(Ticket { ticket: buf });
+
+            let mut stream = flight_client
+                .do_get(request)
+                .await
+                .map_err(|e| Status::internal(format!("{:?}", e)))?
+                .into_inner();
+            return Ok(Response::new(Box::pin(stream)));
         }
 
         Err(Status::unimplemented(format!(
