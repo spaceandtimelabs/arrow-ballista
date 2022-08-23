@@ -45,7 +45,6 @@ use ballista_scheduler::state::backend::{StateBackend, StateBackendClient};
 use ballista_core::config::TaskSchedulingPolicy;
 use ballista_core::serde::BallistaCodec;
 use log::info;
-use tonic::{Request, Status};
 
 #[macro_use]
 extern crate configure_me;

@@ -32,6 +32,8 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{convert::TryInto, io::Cursor};
+use arrow_flight::prost_message_ext;
+use arrow_flight::sql::ProstMessageExt;
 
 // include the generated protobuf source as a submodule
 #[allow(clippy::all)]
@@ -41,6 +43,10 @@ pub mod protobuf {
 
 pub mod physical_plan;
 pub mod scheduler;
+
+prost_message_ext!(
+    protobuf::Action,
+);
 
 pub fn decode_protobuf(bytes: &[u8]) -> Result<BallistaAction, BallistaError> {
     let mut buf = Cursor::new(bytes);

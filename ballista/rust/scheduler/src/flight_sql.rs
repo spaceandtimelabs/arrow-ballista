@@ -18,14 +18,7 @@
 use arrow_flight::flight_descriptor::DescriptorType;
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
-use arrow_flight::sql::{
-    ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
-    ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference,
-    CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys,
-    CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables,
-    CommandPreparedStatementQuery, CommandPreparedStatementUpdate, CommandStatementQuery,
-    CommandStatementUpdate, SqlInfo, TicketStatementQuery,
-};
+use arrow_flight::sql::{ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest, ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery, CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo, TicketStatementQuery, ProstAnyExt, ProstMessageExt};
 use arrow_flight::{Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse, Location, Ticket};
 use log::{error, warn};
 use std::collections::HashMap;
@@ -35,6 +28,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tonic::{Request, Response, Status, Streaming};
+use ballista_core::serde::decode_protobuf;
+use ballista_core::serde::scheduler::Action as BallistaAction;
 
 use crate::scheduler_server::event::QueryStageSchedulerEvent;
 use crate::scheduler_server::SchedulerServer;
@@ -204,7 +199,7 @@ impl FlightSqlServiceImpl {
                 Err(Status::internal("Error getting partition ID".to_string()))?
             };
             let authority = if let Some(ref md) = loc.executor_meta {
-                format!("{}:{}", md.host, md.port)
+                format!("{}:{}", md.host, md.port) // TODO: my host & port
             } else {
                 Err(Status::internal(
                     "Invalid partition location, missing executor metadata".to_string(),
@@ -219,7 +214,7 @@ impl FlightSqlServiceImpl {
             let loc = Location {
                 uri: format!("grpc+tcp://{}", authority),
             };
-            let buf = fetch.encode_to_vec();
+            let buf = fetch.as_any().encode_to_vec();
             let ticket = Ticket { ticket: buf };
             let fiep = FlightEndpoint {
                 ticket: Some(ticket),
@@ -420,6 +415,25 @@ impl FlightSqlService for FlightSqlServiceImpl {
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
         resp.metadata_mut().insert("authorization", md);
         Ok(resp)
+    }
+
+    async fn custom_do_get(
+        &self,
+        request: Request<Ticket>,
+        message: prost_types::Any,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("type_url: {}", message.type_url);
+        if message.is::<protobuf::Action>() {
+            println!("got action!");
+            let action: protobuf::Action = message.unpack()
+                .map_err(|e| Status::internal(format!("{:?}", e)))?
+                .ok_or(Status::internal("Expected an Action but got None!"))?;
+            println!("action={:?}", action);
+        }
+
+        Err(Status::unimplemented(format!(
+            "do_get: The defined request is invalid: {}", message.type_url
+        )))
     }
 
     async fn get_flight_info_statement(
@@ -722,4 +736,8 @@ impl FlightSqlService for FlightSqlServiceImpl {
     }
 
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {}
+}
+
+fn from_ballista_err(e: &ballista_core::error::BallistaError) -> Status {
+    Status::internal(format!("Ballista Error: {:?}", e))
 }
