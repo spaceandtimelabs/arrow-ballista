@@ -1,10 +1,11 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: ballista-executor
   labels:
     {{- include "ballista.labels" . | nindent 4 }}
 spec:
+  serviceName: executor
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
