@@ -37,10 +37,6 @@ spec:
           env:
             - name: SCHEDULER_HOST
               value: ballista-scheduler
-            - name: EXTERNAL_HOST
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
           ports:
             - name: flight
               containerPort: 50051
