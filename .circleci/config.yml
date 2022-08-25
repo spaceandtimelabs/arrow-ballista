@@ -59,6 +59,7 @@ jobs:
       - attach_workspace:
           at: /root
       - run: |
+          set -x
           export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
@@ -68,8 +69,8 @@ jobs:
           kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
-          kubectl rollout status --watch --timeout=2m deployment ballista-scheduler
-          kubectl rollout status --watch --timeout=2m deployment ballista-executor
+          kubectl rollout status --watch --timeout=2m statefulSet ballista-scheduler
+          kubectl rollout status --watch --timeout=2m statefulSet ballista-executor
 
 workflows:
   main_workflow:
