@@ -32,7 +32,6 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{convert::TryInto, io::Cursor};
-use arrow_flight::prost_message_ext;
 use arrow_flight::sql::ProstMessageExt;
 
 // include the generated protobuf source as a submodule
@@ -44,9 +43,18 @@ pub mod protobuf {
 pub mod physical_plan;
 pub mod scheduler;
 
-prost_message_ext!(
-    protobuf::Action,
-);
+impl ProstMessageExt for protobuf::Action {
+    fn type_url() -> &'static str {
+        concat!("type.googleapis.com/arrow.flight.protocol.sql.", stringify!($name))
+    }
+
+    fn as_any(&self) -> prost_types::Any {
+        prost_types::Any {
+            type_url: protobuf::Action::type_url().to_string(),
+            value: self.encode_to_vec(),
+        }
+    }
+}
 
 pub fn decode_protobuf(bytes: &[u8]) -> Result<BallistaAction, BallistaError> {
     let mut buf = Cursor::new(bytes);

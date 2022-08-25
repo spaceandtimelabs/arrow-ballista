@@ -18,7 +18,7 @@
 use arrow_flight::flight_descriptor::DescriptorType;
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
-use arrow_flight::sql::{ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest, ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery, CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo, TicketStatementQuery, ProstAnyExt, ProstMessageExt};
+use arrow_flight::sql::{ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest, ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery, CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo, TicketStatementQuery, ProstAnyExt};
 use arrow_flight::{Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse, Location, Ticket};
 use log::{error, warn};
 use std::collections::HashMap;
@@ -53,6 +53,7 @@ use uuid::Uuid;
 use arrow_flight::flight_service_client::FlightServiceClient;
 use ballista_core::serde::protobuf::action::ActionType::FetchPartition;
 use ballista_core::utils::create_grpc_client_connection;
+use arrow_flight::sql::ProstMessageExt;
 
 pub struct FlightSqlServiceImpl {
     server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode>,
@@ -421,9 +422,9 @@ impl FlightSqlService for FlightSqlServiceImpl {
         Ok(resp)
     }
 
-    async fn custom_do_get(
+    async fn do_get_fallback(
         &self,
-        request: Request<Ticket>,
+        _request: Request<Ticket>,
         message: prost_types::Any,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
         println!("type_url: {}", message.type_url);
@@ -436,7 +437,6 @@ impl FlightSqlService for FlightSqlServiceImpl {
             let (host, port) = match &action.action_type {
                 Some(FetchPartition(fp)) => (fp.host.clone(), fp.port),
                 None => Err(Status::internal("Expected an ActionType but got None!"))?,
-                _ => Err(Status::internal("Unknown ActionType!"))?
             };
 
             let addr = format!("http://{}:{}", host, port);
@@ -454,7 +454,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
             let buf = action.encode_to_vec();
             let request = Request::new(Ticket { ticket: buf });
 
-            let mut stream = flight_client
+            let stream = flight_client
                 .do_get(request)
                 .await
                 .map_err(|e| Status::internal(format!("{:?}", e)))?
@@ -767,8 +767,4 @@ impl FlightSqlService for FlightSqlServiceImpl {
     }
 
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {}
-}
-
-fn from_ballista_err(e: &ballista_core::error::BallistaError) -> Status {
-    Status::internal(format!("Ballista Error: {:?}", e))
 }
