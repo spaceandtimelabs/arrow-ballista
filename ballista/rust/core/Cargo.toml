@@ -35,7 +35,7 @@ simd = ["datafusion/simd"]
 [dependencies]
 ahash = { version = "0.8", default-features = false }
 
-arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "a685c5f18d431650d5d3edbc28a84db3714000ab" }
+arrow-flight = { rev = "a685c5f18d431650d5d3edbc28a84db3714000ab", git = "https://github.com/apache/arrow-rs.git" }
 async-trait = "0.1.41"
 chrono = { version = "0.4", default-features = false }
 clap = { version = "3", features = ["derive", "cargo"] }
