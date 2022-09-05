@@ -38,7 +38,7 @@ use datafusion::dataframe::DataFrame;
 use datafusion::datasource::TableProvider;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_plan::{
-    source_as_provider, CreateExternalTable, FileType, LogicalPlan, TableScan,
+    source_as_provider, CreateExternalTable, LogicalPlan, TableScan,
 };
 use datafusion::prelude::{
     AvroReadOptions, CsvReadOptions, ParquetReadOptions, SessionConfig, SessionContext,
@@ -387,8 +387,8 @@ impl BallistaContext {
                 let table_exists = ctx.table_exist(name.as_str())?;
 
                 match (if_not_exists, table_exists) {
-                    (_, false) => match file_type {
-                        FileType::CSV => {
+                    (_, false) => match file_type.as_str() {
+                        "CSV" => {
                             self.register_csv(
                                 name,
                                 location,
@@ -401,7 +401,7 @@ impl BallistaContext {
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                         }
-                        FileType::Parquet => {
+                        "PARQUET" => {
                             self.register_parquet(
                                 name,
                                 location,
@@ -411,7 +411,7 @@ impl BallistaContext {
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                         }
-                        FileType::Avro => {
+                        "AVRO" => {
                             self.register_avro(
                                 name,
                                 location,

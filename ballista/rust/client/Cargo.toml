@@ -29,9 +29,9 @@ rust-version = "1.59"
 
 [dependencies]
 ballista-core = { path = "../core", version = "0.7.0" }
-ballista-executor = { version = "0.7.0", optional = true, path = "../executor" }
-ballista-scheduler = { optional = true, version = "0.7.0", path = "../scheduler" }
-datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "33c9c4519279546ecbc7c1351744f7cd3a832c36" }
+ballista-executor = { path = "../executor", version = "0.7.0", optional = true }
+ballista-scheduler = { path = "../scheduler", version = "0.7.0", optional = true }
+datafusion = { rev = "33c9c4519279546ecbc7c1351744f7cd3a832c36", git = "https://github.com/spaceandtimelabs/arrow-datafusion.git" }
 datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "33c9c4519279546ecbc7c1351744f7cd3a832c36" }
 futures = "0.3"
 log = "0.4"

@@ -34,8 +34,8 @@ path = "examples/standalone-sql.rs"
 required-features = ["ballista/standalone"]
 
 [dependencies]
-ballista = { version = "0.7.0", path = "../ballista/rust/client" }
-datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "33c9c4519279546ecbc7c1351744f7cd3a832c36" }
+ballista = { path = "../ballista/rust/client", version = "0.7.0" }
+datafusion = { rev = "33c9c4519279546ecbc7c1351744f7cd3a832c36", git = "https://github.com/spaceandtimelabs/arrow-datafusion.git" }
 futures = "0.3"
 num_cpus = "1.13.0"
 prost = "0.11"
