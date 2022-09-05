@@ -135,7 +135,7 @@ pub async fn main() -> Result<()> {
         if !rc.is_empty() {
             exec::exec_from_files(rc, &mut ctx, &print_options).await
         }
-        exec::exec_from_repl(&mut ctx, &mut print_options).await;
+        exec::exec_from_repl(&mut ctx, &mut print_options).await?;
     }
 
     Ok(())
