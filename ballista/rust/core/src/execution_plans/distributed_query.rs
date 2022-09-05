@@ -17,6 +17,7 @@
 
 use crate::client::BallistaClient;
 use crate::config::BallistaConfig;
+
 use crate::serde::protobuf::execute_query_params::OptionalSessionId;
 use crate::serde::protobuf::{
     execute_query_params::Query, job_status, scheduler_grpc_client::SchedulerGrpcClient,
@@ -317,16 +318,19 @@ async fn fetch_partition(
     let partition_id = location.partition_id.ok_or_else(|| {
         DataFusionError::Internal("Received empty partition id".to_owned())
     })?;
-    let mut ballista_client =
-        BallistaClient::try_new(metadata.host.as_str(), metadata.port as u16)
-            .await
-            .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
+    let host = metadata.host.as_str();
+    let port = metadata.port as u16;
+    let mut ballista_client = BallistaClient::try_new(host, port)
+        .await
+        .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
     ballista_client
         .fetch_partition(
             &partition_id.job_id,
             partition_id.stage_id as usize,
             partition_id.partition_id as usize,
             &location.path,
+            host,
+            port,
         )
         .await
         .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))
