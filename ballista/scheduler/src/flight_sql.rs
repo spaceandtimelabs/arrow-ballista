@@ -32,6 +32,8 @@ use arrow_flight::{
 };
 use log::{debug, error, warn};
 use std::convert::TryFrom;
+use std::env;
+use std::iter::FromIterator;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::string::ToString;
@@ -54,8 +56,8 @@ use ballista_core::serde::protobuf::SuccessfulJob;
 use ballista_core::utils::create_grpc_client_connection;
 use dashmap::DashMap;
 use datafusion::arrow;
-use datafusion::arrow::array::{ArrayRef, StringArray};
-use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::array::{Array, ArrayData, ArrayRef, Float64Array, GenericStringArray, ListArray, ListBuilder, StringArray, StructArray, UnionArray};
+use datafusion::arrow::datatypes::{DataType, Field, Int32Type, Schema, SchemaRef, UnionMode};
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::ipc::writer::{IpcDataGenerator, IpcWriteOptions};
 use datafusion::arrow::record_batch::RecordBatch;
@@ -72,6 +74,11 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::codegen::futures_core::Stream;
 use tonic::metadata::MetadataValue;
 use uuid::Uuid;
+use datafusion::arrow::buffer::Buffer;
+use datafusion::catalog::listing_schema::ListingSchemaProvider;
+use datafusion::error::DataFusionError;
+use deltalake::arrow::array::{BooleanArray, Int32Array, Int64Array, StringBuilder, UInt32Array};
+use deltalake::parquet::basic::StringType;
 
 pub struct FlightSqlServiceImpl {
     server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode>,
@@ -90,17 +97,45 @@ impl FlightSqlServiceImpl {
         }
     }
 
-    fn tables(&self, ctx: Arc<SessionContext>) -> Result<RecordBatch, ArrowError> {
+    async fn tables(
+        &self,
+        ctx: Arc<SessionContext>,
+        catalog: Option<String>
+    ) -> Result<RecordBatch, ArrowError> {
         let schema = Arc::new(Schema::new(vec![
             Field::new("catalog_name", DataType::Utf8, true),
             Field::new("db_schema_name", DataType::Utf8, true),
             Field::new("table_name", DataType::Utf8, false),
             Field::new("table_type", DataType::Utf8, false),
         ]));
-        let tables = ctx.tables()?;
+        let mut cats = vec![];
+        let mut tables = vec![];
+        let cat_names = ctx.catalog_names().clone();
+        for cat_name in cat_names.iter() {
+            if let Some(name) = catalog.as_ref() {
+                if name != cat_name {
+                    continue;
+                }
+            }
+            let cat_name = cat_name.as_str();
+            let cat = ctx.catalog(cat_name).
+                ok_or(DataFusionError::Internal("Catalog not found!".to_string()))?;
+            for schema_name in cat.schema_names() {
+                let schema = cat.schema(schema_name.as_str())
+                    .ok_or(DataFusionError::Internal("Schema not found!".to_string()))?;
+                let lister = schema.as_any().downcast_ref::<ListingSchemaProvider>().map(|it| it.clone());
+                if let Some(lister) = lister {
+                    lister.refresh(&ctx.state()).await?;
+                }
+                for tab in schema.table_names() {
+                    cats.push(cat_name);
+                    tables.push(tab);
+                }
+            }
+        }
         let names: Vec<_> = tables.iter().map(|it| Some(it.as_str())).collect();
         let types: Vec<_> = names.iter().map(|_| Some("TABLE")).collect();
-        let cats: Vec<_> = names.iter().map(|_| None).collect();
+        let cats: Vec<_> = cats.into_iter().map(|it| Some(it)).collect();
         let schemas: Vec<_> = names.iter().map(|_| None).collect();
         let rb = RecordBatch::try_new(
             schema,
@@ -110,6 +145,85 @@ impl FlightSqlServiceImpl {
                 .collect::<Vec<_>>(),
         )?;
         Ok(rb)
+    }
+
+    fn schemas(&self, _ctx: Arc<SessionContext>) -> Result<RecordBatch, ArrowError> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("catalog_name", DataType::Utf8, true),
+            Field::new("db_schema_name", DataType::Utf8, false),
+        ]));
+        let cats = vec!["default"]; // TODO: enumerate catalogs
+        let schemas = vec!["default"];
+        let rb = RecordBatch::try_new(
+            schema,
+            [cats, schemas]
+                .into_iter()
+                .map(|i| Arc::new(StringArray::from(i.clone())) as ArrayRef)
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(rb)
+    }
+
+    fn sql_infos(&self) -> Result<RecordBatch, ArrowError> {
+        let map_entries = vec![
+            Field::new("key", DataType::Int32, false),
+            Field::new("value", DataType::List(Box::new(Field::new("item", DataType::Int32, true))), false),
+        ];
+        let fields = vec![
+            Field::new("string_value", DataType::Utf8, false),
+            Field::new("bool_value", DataType::Boolean, false),
+            Field::new("bigint_value", DataType::Int64, false),
+            Field::new("int32_bitmask", DataType::Int32, false),
+            Field::new("string_list", DataType::List(Box::new(Field::new("item", DataType::Utf8, true))), false),
+            Field::new("int32_to_int32_list_map", DataType::Struct(map_entries.clone()), false),
+        ];
+        let schema = Schema::new(vec![
+            Field::new("info_name", DataType::UInt32, false),
+            Field::new("value", DataType::Union(
+                fields.clone(),
+                vec![0, 1, 2, 3, 4, 5],
+                UnionMode::Dense
+            ), false)
+        ]);
+
+        let mut builder = ListBuilder::new(StringBuilder::new());
+        let str_ar = builder.finish();
+
+        let data: Vec<Option<Vec<Option<i32>>>> = vec![];
+        let int_array = ListArray::from_iter_primitive::<Int32Type, _, _>(data);
+        let nested = vec![
+            Arc::new(Int32Array::from(Vec::<i32>::new())) as Arc<dyn Array>,
+            Arc::new(int_array),
+        ];
+        let nested: Vec<_> = map_entries.iter().map(|e| e.clone()).zip(nested).collect();
+        let nested = StructArray::from(nested);
+
+        let string_array = StringArray::from(vec!["Apache Arrow Ballista"]);
+        let type_ids = [0_i8];
+        let value_offsets = [0_i32];
+        let type_id_buffer = Buffer::from_slice_ref(&type_ids);
+        let value_offsets_buffer = Buffer::from_slice_ref(&value_offsets);
+        let children: Vec<Arc<dyn Array>> = vec![
+            Arc::new(string_array),
+            Arc::new(BooleanArray::from(Vec::<bool>::new())),
+            Arc::new(Int64Array::from(Vec::<i64>::new())),
+            Arc::new(Int32Array::from(Vec::<i32>::new())),
+            Arc::new(str_ar),
+            Arc::new(nested)
+        ];
+        let children: Vec<(Field, Arc<dyn Array>)> = fields.into_iter().zip(children).collect();
+        let value = Arc::new(UnionArray::try_new(
+            &[0, 1, 2, 3, 4, 5],
+            type_id_buffer,
+            Some(value_offsets_buffer),
+            children,
+        )?);
+        let info_names: UInt32Array = [Some(SqlInfo::FlightSqlServerName as u32)].into_iter().collect();
+
+        RecordBatch::try_new(
+            SchemaRef::from(schema),
+            vec![Arc::new(info_names), value]
+        )
     }
 
     fn table_types() -> Result<RecordBatch, ArrowError> {
@@ -128,8 +242,8 @@ impl FlightSqlServiceImpl {
     }
 
     async fn create_ctx(&self) -> Result<Uuid, Status> {
-        let config_builder = BallistaConfig::builder();
-        let config = config_builder
+        let config = BallistaConfig::builder()
+            .load_env()
             .build()
             .map_err(|e| Status::internal(format!("Error building config: {}", e)))?;
         let ctx = self
@@ -138,6 +252,10 @@ impl FlightSqlServiceImpl {
             .session_manager
             .create_session(&config)
             .await
+            .map_err(|e| {
+                Status::internal(format!("Failed to create SessionContext: {:?}", e))
+            })?;
+        ctx.refresh_catalogs().await
             .map_err(|e| {
                 Status::internal(format!("Failed to create SessionContext: {:?}", e))
             })?;
@@ -486,9 +604,9 @@ impl FlightSqlService for FlightSqlServiceImpl {
         Response<Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>>>,
         Status,
     > {
-        debug!("do_handshake");
+        println!("do_handshake");
         for md in request.metadata().iter() {
-            debug!("{:?}", md);
+            println!("{:?}", md);
         }
 
         let basic = "Basic ";
@@ -543,7 +661,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         request: Request<Ticket>,
         message: prost_types::Any,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_fallback type_url: {}", message.type_url);
+        println!("do_get_fallback type_url: {}", message.type_url);
         let ctx = self.get_ctx(&request)?;
         if !message.is::<protobuf::Action>() {
             Err(Status::unimplemented(format!(
@@ -564,7 +682,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         // Well-known job ID: respond with the data
         match fp.job_id.as_str() {
             "get_flight_info_table_types" => {
-                debug!("Responding with table types");
+                println!("Responding with table types");
                 let rb = FlightSqlServiceImpl::table_types().map_err(|e| {
                     Status::internal("Error getting table types".to_string())
                 })?;
@@ -572,10 +690,26 @@ impl FlightSqlService for FlightSqlServiceImpl {
                 return Ok(resp);
             }
             "get_flight_info_tables" => {
-                debug!("Responding with tables");
+                println!("Responding with tables");
                 let rb = self
-                    .tables(ctx)
+                    .tables(ctx, None).await
                     .map_err(|e| Status::internal("Error getting tables".to_string()))?;
+                let resp = Self::record_batch_to_resp(&rb).await?;
+                return Ok(resp);
+            }
+            "get_flight_info_schemas" => {
+                println!("Responding with schemas");
+                let rb = self
+                    .schemas(ctx)
+                    .map_err(|e| Status::internal("Error getting schemas".to_string()))?;
+                let resp = Self::record_batch_to_resp(&rb).await?;
+                return Ok(resp);
+            }
+            "get_flight_info_sql_info" => {
+                println!("Responding with sql infos");
+                let rb = self
+                    .sql_infos()
+                    .map_err(|e| Status::internal("Error getting sql_infos".to_string()))?;
                 let resp = Self::record_batch_to_resp(&rb).await?;
                 return Ok(resp);
             }
@@ -584,7 +718,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
 
         // Proxy the flight
         let addr = format!("http://{}:{}", fp.host, fp.port);
-        debug!("Scheduler proxying flight for to {}", addr);
+        println!("Scheduler proxying flight for to {}", addr);
         let connection =
             create_grpc_client_connection(addr.clone())
                 .await
@@ -611,13 +745,13 @@ impl FlightSqlService for FlightSqlServiceImpl {
         query: CommandStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_statement query:\n{}", query.query);
+        println!("get_flight_info_statement query:\n{}", query.query);
 
         let ctx = self.get_ctx(&request)?;
         let plan = Self::prepare_statement(&query.query, &ctx).await?;
         let resp = self.execute_plan(ctx, &plan).await?;
 
-        debug!("Returning flight info...");
+        println!("Returning flight info...");
         Ok(resp)
     }
 
@@ -626,14 +760,14 @@ impl FlightSqlService for FlightSqlServiceImpl {
         handle: CommandPreparedStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_prepared_statement");
+        println!("get_flight_info_prepared_statement");
         let ctx = self.get_ctx(&request)?;
         let handle = Uuid::from_slice(handle.prepared_statement_handle.as_slice())
             .map_err(|e| Status::internal(format!("Error decoding handle: {}", e)))?;
         let plan = self.get_plan(&handle)?;
         let resp = self.execute_plan(ctx, &plan).await?;
 
-        debug!("Responding to query {}...", handle);
+        println!("Responding to query {}...", handle);
         Ok(resp)
     }
 
@@ -642,27 +776,34 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetCatalogs,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_catalogs");
+        println!("get_flight_info_catalogs");
         Err(Status::unimplemented("Implement get_flight_info_catalogs"))
     }
+
     async fn get_flight_info_schemas(
         &self,
-        _query: CommandGetDbSchemas,
-        _request: Request<FlightDescriptor>,
+        query: CommandGetDbSchemas,
+        request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_schemas");
-        Err(Status::unimplemented("Implement get_flight_info_schemas"))
+        println!("get_flight_info_schemas catalog={:?} filter={:?}", query.catalog, query.db_schema_filter_pattern);
+
+        let ctx = self.get_ctx(&request)?;
+        let data = self
+            .schemas(ctx)
+            .map_err(|e| Status::internal(format!("Error getting schemas: {}", e)))?;
+        let resp = self.batch_to_schema_resp(&data, "get_flight_info_schemas")?;
+        Ok(resp)
     }
 
     async fn get_flight_info_tables(
         &self,
-        _query: CommandGetTables,
+        query: CommandGetTables,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_tables");
+        println!("get_flight_info_tables catalog={:?}", query.catalog);
         let ctx = self.get_ctx(&request)?;
         let data = self
-            .tables(ctx)
+            .tables(ctx, query.catalog).await
             .map_err(|e| Status::internal(format!("Error getting tables: {}", e)))?;
         let resp = self.batch_to_schema_resp(&data, "get_flight_info_tables")?;
         Ok(resp)
@@ -671,9 +812,9 @@ impl FlightSqlService for FlightSqlServiceImpl {
     async fn get_flight_info_table_types(
         &self,
         _query: CommandGetTableTypes,
-        request: Request<FlightDescriptor>,
+        _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_table_types");
+        println!("get_flight_info_table_types");
         let data = FlightSqlServiceImpl::table_types()
             .map_err(|e| Status::internal(format!("Error getting table types: {}", e)))?;
         let resp = self.batch_to_schema_resp(&data, "get_flight_info_table_types")?;
@@ -682,19 +823,22 @@ impl FlightSqlService for FlightSqlServiceImpl {
 
     async fn get_flight_info_sql_info(
         &self,
-        _query: CommandGetSqlInfo,
+        query: CommandGetSqlInfo,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_sql_info");
-        // TODO: implement for FlightSQL JDBC to work
-        Err(Status::unimplemented("Implement CommandGetSqlInfo"))
+        println!("get_flight_info_sql_info requested infos: {}", query.info.iter().map(|i| i.to_string()).join(","));
+        let data = self.sql_infos()
+            .map_err(|e| Status::internal(format!("Error getting sql info: {}", e)))?;
+        let resp = self.batch_to_schema_resp(&data, "get_flight_info_sql_info")?;
+        Ok(resp)
     }
+
     async fn get_flight_info_primary_keys(
         &self,
         _query: CommandGetPrimaryKeys,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_primary_keys");
+        println!("get_flight_info_primary_keys");
         Err(Status::unimplemented(
             "Implement get_flight_info_primary_keys",
         ))
@@ -704,7 +848,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetExportedKeys,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_exported_keys");
+        println!("get_flight_info_exported_keys");
         Err(Status::unimplemented(
             "Implement get_flight_info_exported_keys",
         ))
@@ -714,7 +858,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetImportedKeys,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_imported_keys");
+        println!("get_flight_info_imported_keys");
         Err(Status::unimplemented(
             "Implement get_flight_info_imported_keys",
         ))
@@ -724,7 +868,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetCrossReference,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        debug!("get_flight_info_cross_reference");
+        println!("get_flight_info_cross_reference");
         Err(Status::unimplemented(
             "Implement get_flight_info_cross_reference",
         ))
@@ -735,7 +879,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _ticket: TicketStatementQuery,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_statement");
+        println!("do_get_statement");
         // let handle = Uuid::from_slice(&ticket.statement_handle)
         //     .map_err(|e| Status::internal(format!("Error decoding ticket: {}", e)))?;
         // let statements = self.statements.try_lock()
@@ -749,7 +893,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandPreparedStatementQuery,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_prepared_statement");
+        println!("do_get_prepared_statement");
         Err(Status::unimplemented("Implement do_get_prepared_statement"))
     }
     async fn do_get_catalogs(
@@ -757,7 +901,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetCatalogs,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_catalogs");
+        println!("do_get_catalogs");
         Err(Status::unimplemented("Implement do_get_catalogs"))
     }
     async fn do_get_schemas(
@@ -765,7 +909,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetDbSchemas,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_schemas");
+        println!("do_get_schemas");
         Err(Status::unimplemented("Implement do_get_schemas"))
     }
     async fn do_get_tables(
@@ -773,7 +917,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetTables,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_tables");
+        println!("do_get_tables");
         Err(Status::unimplemented("Implement do_get_tables"))
     }
     async fn do_get_table_types(
@@ -781,7 +925,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetTableTypes,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_table_types");
+        println!("do_get_table_types");
         Err(Status::unimplemented("Implement do_get_table_types"))
     }
     async fn do_get_sql_info(
@@ -789,7 +933,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetSqlInfo,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_sql_info");
+        println!("do_get_sql_info");
         Err(Status::unimplemented("Implement do_get_sql_info"))
     }
     async fn do_get_primary_keys(
@@ -797,7 +941,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetPrimaryKeys,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_primary_keys");
+        println!("do_get_primary_keys");
         Err(Status::unimplemented("Implement do_get_primary_keys"))
     }
     async fn do_get_exported_keys(
@@ -805,7 +949,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetExportedKeys,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_exported_keys");
+        println!("do_get_exported_keys");
         Err(Status::unimplemented("Implement do_get_exported_keys"))
     }
     async fn do_get_imported_keys(
@@ -813,7 +957,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetImportedKeys,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_imported_keys");
+        println!("do_get_imported_keys");
         Err(Status::unimplemented("Implement do_get_imported_keys"))
     }
     async fn do_get_cross_reference(
@@ -821,7 +965,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandGetCrossReference,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
-        debug!("do_get_cross_reference");
+        println!("do_get_cross_reference");
         Err(Status::unimplemented("Implement do_get_cross_reference"))
     }
     // do_put
@@ -830,7 +974,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _ticket: CommandStatementUpdate,
         _request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        debug!("do_put_statement_update");
+        println!("do_put_statement_update");
         Err(Status::unimplemented("Implement do_put_statement_update"))
     }
     async fn do_put_prepared_statement_query(
@@ -838,7 +982,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         _query: CommandPreparedStatementQuery,
         _request: Request<Streaming<FlightData>>,
     ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
-        debug!("do_put_prepared_statement_query");
+        println!("do_put_prepared_statement_query");
         Err(Status::unimplemented(
             "Implement do_put_prepared_statement_query",
         ))
@@ -848,13 +992,13 @@ impl FlightSqlService for FlightSqlServiceImpl {
         handle: CommandPreparedStatementUpdate,
         request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
-        debug!("do_put_prepared_statement_update");
+        println!("do_put_prepared_statement_update");
         let ctx = self.get_ctx(&request)?;
         let handle = Uuid::from_slice(handle.prepared_statement_handle.as_slice())
             .map_err(|e| Status::internal(format!("Error decoding handle: {}", e)))?;
         let plan = self.get_plan(&handle)?;
         let _ = self.execute_plan(ctx, &plan).await?;
-        debug!("Sending -1 rows affected");
+        println!("Sending -1 rows affected");
         Ok(-1)
     }
 
@@ -863,12 +1007,12 @@ impl FlightSqlService for FlightSqlServiceImpl {
         query: ActionCreatePreparedStatementRequest,
         request: Request<Action>,
     ) -> Result<ActionCreatePreparedStatementResult, Status> {
-        debug!("do_action_create_prepared_statement");
+        println!("do_action_create_prepared_statement");
         let ctx = self.get_ctx(&request)?;
         let plan = Self::prepare_statement(&query.query, &ctx).await?;
         let schema_bytes = self.df_schema_to_arrow(plan.schema())?;
         let handle = self.cache_plan(plan)?;
-        debug!("Prepared statement {}:\n{}", handle, query.query);
+        println!("Prepared statement {}:\n{}", handle, query.query);
         let res = ActionCreatePreparedStatementResult {
             prepared_statement_handle: handle.as_bytes().to_vec(),
             dataset_schema: schema_bytes,
@@ -882,10 +1026,10 @@ impl FlightSqlService for FlightSqlServiceImpl {
         handle: ActionClosePreparedStatementRequest,
         _request: Request<Action>,
     ) {
-        debug!("do_action_close_prepared_statement");
+        println!("do_action_close_prepared_statement");
         let handle = Uuid::from_slice(handle.prepared_statement_handle.as_slice());
         let handle = if let Ok(handle) = handle {
-            debug!("Closing {}", handle);
+            println!("Closing {}", handle);
             handle
         } else {
             return;
