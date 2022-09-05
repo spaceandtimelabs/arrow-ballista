@@ -25,6 +25,8 @@ use futures::future::{self, Either, TryFutureExt};
 use hyper::{server::conn::AddrStream, service::make_service_fn, Server};
 use std::convert::Infallible;
 use std::{env, io, net::SocketAddr, sync::Arc};
+use std::collections::HashMap;
+use datafusion::datasource::datasource::TableProviderFactory;
 use tonic::transport::server::Connected;
 use tower::Service;
 
@@ -66,6 +68,7 @@ use ballista_scheduler::flight_sql::FlightSqlServiceImpl;
 use config::prelude::*;
 use datafusion::execution::context::default_session_builder;
 use tracing_subscriber::EnvFilter;
+use ballista_core::table_factories::delta::DeltaTableFactory;
 
 async fn start_server(
     scheduler_name: String,
@@ -82,6 +85,10 @@ async fn start_server(
         "Starting Scheduler grpc server with task scheduling policy of {:?}",
         policy
     );
+    let factory: Arc<(dyn TableProviderFactory + 'static)> = Arc::new(DeltaTableFactory {});
+    let factories = HashMap::from([
+        ("DELTATABLE".to_string(), factory)
+    ]);
     let mut scheduler_server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode> =
         match policy {
             TaskSchedulingPolicy::PushStaged => SchedulerServer::new_with_policy(
@@ -90,11 +97,13 @@ async fn start_server(
                 policy,
                 BallistaCodec::default(),
                 default_session_builder,
+                factories,
             ),
             _ => SchedulerServer::new(
                 scheduler_name,
                 config_backend.clone(),
                 BallistaCodec::default(),
+                factories,
             ),
         };
 

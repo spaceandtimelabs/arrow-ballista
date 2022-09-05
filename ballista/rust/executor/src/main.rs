@@ -17,6 +17,7 @@
 
 //! Ballista Rust executor binary.
 
+use std::collections::HashMap;
 use chrono::{DateTime, Duration, Utc};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -163,7 +164,7 @@ async fn main() -> Result<()> {
     };
 
     let config = RuntimeConfig::new().with_temp_file_path(work_dir.clone());
-    let runtime = Arc::new(RuntimeEnv::new(config).map_err(|_| {
+    let runtime = Arc::new(RuntimeEnv::new(config, HashMap::default()).map_err(|_| {
         BallistaError::Internal("Failed to init Executor RuntimeEnv".to_owned())
     })?);
 

@@ -16,6 +16,7 @@
 // under the License.
 
 use std::any::type_name;
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Instant;
@@ -35,6 +36,7 @@ use datafusion::prelude::SessionContext;
 use datafusion_proto::logical_plan::AsLogicalPlan;
 use log::{debug, error, info};
 use prost::Message;
+use datafusion::datasource::datasource::TableProviderFactory;
 
 pub mod backend;
 pub mod execution_graph;
@@ -98,6 +100,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerState<T,
             session_builder,
             codec,
             "localhost:50050".to_owned(),
+            HashMap::default(),
         )
     }
 
@@ -106,6 +109,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerState<T,
         session_builder: SessionBuilder,
         codec: BallistaCodec<T, U>,
         scheduler_name: String,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> Self {
         Self {
             executor_manager: ExecutorManager::new(config_client.clone()),
@@ -114,8 +118,9 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerState<T,
                 session_builder,
                 codec.clone(),
                 scheduler_name,
+                table_factories.clone(),
             ),
-            session_manager: SessionManager::new(config_client, session_builder),
+            session_manager: SessionManager::new(config_client, session_builder, table_factories),
             codec,
         }
     }
@@ -256,7 +261,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerState<T,
         let start = Instant::now();
         let optimized_plan = session_ctx.optimize(plan)?;
 
-        debug!("Calculated optimized plan: {:?}", optimized_plan);
+        println!("Calculated optimized plan: {:?}", optimized_plan);
 
         let plan = session_ctx.create_physical_plan(&optimized_plan).await?;
 

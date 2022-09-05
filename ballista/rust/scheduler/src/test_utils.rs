@@ -198,6 +198,6 @@ pub fn get_tpch_schema(table: &str) -> Schema {
             Field::new("r_comment", DataType::Utf8, false),
         ]),
 
-        _ => unimplemented!(),
+        _ => unimplemented!("get_tpch_schema"),
     }
 }

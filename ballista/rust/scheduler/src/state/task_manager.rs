@@ -45,6 +45,7 @@ use std::default::Default;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Channel;
+use datafusion::datasource::datasource::TableProviderFactory;
 
 type ExecutorClients = Arc<RwLock<HashMap<String, ExecutorGrpcClient<Channel>>>>;
 type ExecutionGraphCache = Arc<RwLock<HashMap<String, Arc<RwLock<ExecutionGraph>>>>>;
@@ -59,6 +60,7 @@ pub struct TaskManager<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>
     scheduler_id: String,
     // Cache for active execution graphs curated by this scheduler
     active_job_cache: ExecutionGraphCache,
+    table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
 }
 
 impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U> {
@@ -67,6 +69,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         session_builder: SessionBuilder,
         codec: BallistaCodec<T, U>,
         scheduler_id: String,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> Self {
         Self {
             state,
@@ -75,6 +78,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
             codec,
             scheduler_id,
             active_job_cache: Arc::new(RwLock::new(HashMap::new())),
+            table_factories,
         }
     }
 
@@ -569,7 +573,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         }
         let config = config_builder.build()?;
 
-        Ok(create_datafusion_context(&config, self.session_builder))
+        Ok(create_datafusion_context(&config, self.session_builder, self.table_factories.clone()))
     }
 
     async fn decode_execution_graph(&self, value: Vec<u8>) -> Result<ExecutionGraph> {

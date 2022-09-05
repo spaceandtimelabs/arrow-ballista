@@ -31,10 +31,15 @@ use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair};
 use ballista_core::utils::{
     create_df_ctx_with_ballista_query_planner, create_grpc_client_connection,
 };
+
+#[cfg(feature = "standalone")]
+use ballista_scheduler::standalone::new_standalone_scheduler;
+
 use datafusion_proto::protobuf::LogicalPlanNode;
 
 use datafusion::catalog::TableReference;
 use datafusion::dataframe::DataFrame;
+use datafusion::datasource::datasource::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_plan::{
@@ -86,6 +91,7 @@ impl BallistaContext {
         host: &str,
         port: u16,
         config: &BallistaConfig,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> ballista_core::error::Result<Self> {
         let state = BallistaContextState::new(host.to_owned(), port, config);
 
@@ -128,6 +134,7 @@ impl BallistaContext {
                 scheduler_url,
                 remote_session_id,
                 state.config(),
+                table_factories,
             )
         };
 
@@ -141,13 +148,14 @@ impl BallistaContext {
     pub async fn standalone(
         config: &BallistaConfig,
         concurrent_tasks: usize,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> ballista_core::error::Result<Self> {
         use ballista_core::serde::protobuf::PhysicalPlanNode;
         use ballista_core::serde::BallistaCodec;
 
         log::info!("Running in local mode. Scheduler will be run in-proc");
 
-        let addr = ballista_scheduler::standalone::new_standalone_scheduler().await?;
+        let addr = new_standalone_scheduler(table_factories.clone()).await?;
         let scheduler_url = format!("http://localhost:{}", addr.port());
         let mut scheduler = loop {
             match SchedulerGrpcClient::connect(scheduler_url.clone()).await {
@@ -187,6 +195,7 @@ impl BallistaContext {
                 scheduler_url,
                 remote_session_id,
                 config,
+                table_factories.clone(),
             )
         };
 
@@ -197,6 +206,7 @@ impl BallistaContext {
             scheduler,
             concurrent_tasks,
             default_codec,
+            table_factories,
         )
         .await?;
 
@@ -221,7 +231,9 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.read_avro(path.to_str().unwrap(), options).await?;
+        let df = ctx
+            .read_avro(path.to_str().unwrap(), options)
+            .await?;
         Ok(df)
     }
 
@@ -237,7 +249,9 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.read_parquet(path.to_str().unwrap(), options).await?;
+        let df = ctx
+            .read_parquet(path.to_str().unwrap(), options)
+            .await?;
         Ok(df)
     }
 
@@ -250,7 +264,7 @@ impl BallistaContext {
     ) -> Result<Arc<DataFrame>> {
         // convert to absolute path because the executor likely has a different working directory
         let path = PathBuf::from(path);
-        let path = fs::canonicalize(&path)?;
+        let path = fs::canonicalize(&path).map_err(|e| DataFusionError::Internal(format!("Error reading {:?}: {}", path, e)))?;
 
         let ctx = self.context.clone();
         let df = ctx.read_csv(path.to_str().unwrap(), options).await?;
@@ -398,48 +412,69 @@ impl BallistaContext {
                     (_, false) => match file_type.to_lowercase().as_str() {
                         "csv" => {
                             self.register_csv(
-                                name,
-                                location,
+                                cmd.name.as_str(),
+                                cmd.location.as_str(),
                                 CsvReadOptions::new()
-                                    .schema(&schema.as_ref().to_owned().into())
-                                    .has_header(*has_header)
-                                    .delimiter(*delimiter as u8)
-                                    .table_partition_cols(table_partition_cols.to_vec()),
+                                    .schema(&cmd.schema.as_ref().to_owned().into())
+                                    .has_header(cmd.has_header)
+                                    .delimiter(cmd.delimiter as u8)
+                                    .table_partition_cols(
+                                        cmd.table_partition_cols.to_vec(),
+                                    ),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                         }
                         "parquet" => {
                             self.register_parquet(
-                                name,
-                                location,
-                                ParquetReadOptions::default()
-                                    .table_partition_cols(table_partition_cols.to_vec()),
+                                cmd.name.as_str(),
+                                cmd.location.as_str(),
+                                ParquetReadOptions::default().table_partition_cols(
+                                    cmd.table_partition_cols.to_vec(),
+                                ),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                         }
                         "avro" => {
                             self.register_avro(
-                                name,
-                                location,
-                                AvroReadOptions::default()
-                                    .table_partition_cols(table_partition_cols.to_vec()),
+                                cmd.name.as_str(),
+                                cmd.location.as_str(),
+                                AvroReadOptions::default().table_partition_cols(
+                                    cmd.table_partition_cols.to_vec(),
+                                ),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                         }
-                        _ => Err(DataFusionError::NotImplemented(format!(
-                            "Unsupported file type {:?}.",
-                            file_type
-                        ))),
+                        file_type => {
+                            let state = ctx.state.read().clone();
+                            let factory =
+                                state.runtime_env.table_factories.get(file_type).ok_or_else(|| {
+                                    DataFusionError::Execution(format!(
+                                        "Ballista unable to find factory for {}",
+                                        file_type
+                                    ))
+                                })?;
+                            let table = (*factory).create(
+                                &state,
+                                cmd.file_type.as_str(),
+                                cmd.location.as_str(),
+                                HashMap::new(), // TODO: parse options from SQL
+                            ).await?;
+                            self.register_table(cmd.name.as_str(), table.clone())?;
+
+                            let df = self.context.read_table(table)?;
+                            let plan = df.to_logical_plan()?;
+                            Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                        }
                     },
                     (true, true) => {
                         Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                     }
                     (false, true) => Err(DataFusionError::Execution(format!(
                         "Table '{:?}' already exists",
-                        name
+                        cmd.name
                     ))),
                 }
             }
@@ -450,18 +485,74 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
+    use datafusion::arrow;
+    use datafusion::arrow::datatypes::{SchemaRef};
+    use datafusion::arrow::util::pretty::pretty_format_batches;
+    use datafusion::datasource::custom::CustomTable;
+    use datafusion::datasource::datasource::TableProviderFactory;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
+    use datafusion::datasource::{TableProvider};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use datafusion::datasource::listing::{ListingTable, ListingTableConfig};
+    use datafusion::prelude::ParquetReadOptions;
+    use datafusion::error::{Result};
+    use datafusion::execution::context::SessionState;
+    use async_trait::async_trait;
+    use ballista_core::table_factories::delta::DeltaTableFactory;
 
     #[tokio::test]
     #[cfg(feature = "standalone")]
     async fn test_standalone_mode() {
         use super::*;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, HashMap::default())
             .await
             .unwrap();
         let df = context.sql("SELECT 1;").await.unwrap();
         df.collect().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "standalone")]
+    async fn test_register_table_factory() {
+        use super::*;
+
+        let factory: Arc<(dyn TableProviderFactory + 'static)> = Arc::new(DeltaTableFactory {});
+        let factories = HashMap::from([
+            ("DELTATABLE".to_string(), factory)
+        ]);
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, factories)
+            .await
+            .unwrap();
+
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("testdata/delta-table");
+        let sql = format!(r#"
+            CREATE EXTERNAL TABLE dt
+            STORED AS DELTATABLE
+            LOCATION '{}';
+            "#, d.to_str().unwrap());
+        context.sql(sql.as_str()).await.unwrap();
+
+        let exists = context.state.lock().tables.contains_key("dt");
+        assert!(exists, "Table should have been created!");
+
+        // --- query MemTable
+        let df = context.sql("select * from dt").await.unwrap();
+        let res = df.collect().await.unwrap();
+        let expected = vec![
+            "+----+",
+            "| id |",
+            "+----+",
+            "| 1  |",
+            "| 4  |",
+            "| 2  |",
+            "| 0  |",
+            "| 3  |",
+            "+----+"
+        ];
+        assert_result_eq(expected, &*res);
     }
 
     #[tokio::test]
@@ -471,7 +562,8 @@ mod tests {
         use std::fs::File;
         use std::io::Write;
         use tempfile::TempDir;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, HashMap::default())
             .await
             .unwrap();
 
@@ -521,7 +613,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -573,7 +665,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         context
             .register_parquet(
@@ -642,7 +734,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         let sql = "select EXTRACT(year FROM to_timestamp('2020-09-08T12:13:14+00:00'));";
 
@@ -662,7 +754,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         let df = context
             .sql("SELECT 1 as NUMBER union SELECT 1 as NUMBER;")
@@ -716,15 +808,13 @@ mod tests {
         use ballista_core::config::{
             BallistaConfigBuilder, BALLISTA_WITH_INFORMATION_SCHEMA,
         };
-        use datafusion::arrow;
-        use datafusion::arrow::util::pretty::pretty_format_batches;
         use datafusion::prelude::ParquetReadOptions;
 
         let config = BallistaConfigBuilder::default()
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         context
             .register_parquet(
@@ -941,20 +1031,20 @@ mod tests {
         ];
 
         assert_result_eq(expected, &*res);
+    }
 
-        fn assert_result_eq(
-            expected: Vec<&str>,
-            results: &[arrow::record_batch::RecordBatch],
-        ) {
-            assert_eq!(
-                expected,
-                pretty_format_batches(results)
-                    .unwrap()
-                    .to_string()
-                    .trim()
-                    .lines()
-                    .collect::<Vec<&str>>()
-            );
-        }
+    fn assert_result_eq(
+        expected: Vec<&str>,
+        results: &[arrow::record_batch::RecordBatch],
+    ) {
+        assert_eq!(
+            expected,
+            pretty_format_batches(results)
+                .unwrap()
+                .to_string()
+                .trim()
+                .lines()
+                .collect::<Vec<&str>>()
+        );
     }
 }

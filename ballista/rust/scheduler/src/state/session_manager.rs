@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use crate::scheduler_server::SessionBuilder;
 use crate::state::backend::{Keyspace, StateBackendClient};
 use crate::state::{decode_protobuf, encode_protobuf};
@@ -26,21 +27,27 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::common::ScalarValue;
 use log::warn;
 use std::sync::Arc;
+use datafusion::datasource::datasource::TableProviderFactory;
+use datafusion::execution::context::SessionState;
+use datafusion::execution::runtime_env::RuntimeEnv;
 
 #[derive(Clone)]
 pub struct SessionManager {
     state: Arc<dyn StateBackendClient>,
     session_builder: SessionBuilder,
+    table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
 }
 
 impl SessionManager {
     pub fn new(
         state: Arc<dyn StateBackendClient>,
         session_builder: SessionBuilder,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> Self {
         Self {
             state,
             session_builder,
+            table_factories,
         }
     }
 
@@ -63,7 +70,7 @@ impl SessionManager {
             .put(Keyspace::Sessions, session_id.to_owned(), value)
             .await?;
 
-        Ok(create_datafusion_context(config, self.session_builder))
+        Ok(create_datafusion_context(config, self.session_builder, self.table_factories.clone()))
     }
 
     pub async fn create_session(
@@ -85,7 +92,7 @@ impl SessionManager {
         }
         let config = config_builder.build()?;
 
-        let ctx = create_datafusion_context(&config, self.session_builder);
+        let ctx = create_datafusion_context(&config, self.session_builder, self.table_factories.clone());
 
         let value = encode_protobuf(&protobuf::SessionSettings { configs: settings })?;
         self.state
@@ -106,7 +113,7 @@ impl SessionManager {
         }
         let config = config_builder.build()?;
 
-        Ok(create_datafusion_context(&config, self.session_builder))
+        Ok(create_datafusion_context(&config, self.session_builder, self.table_factories.clone()))
     }
 }
 
@@ -114,6 +121,7 @@ impl SessionManager {
 pub fn create_datafusion_context(
     ballista_config: &BallistaConfig,
     session_builder: SessionBuilder,
+    table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
 ) -> Arc<SessionContext> {
     let config = SessionConfig::new()
         .with_target_partitions(ballista_config.default_shuffle_partitions())
@@ -123,6 +131,7 @@ pub fn create_datafusion_context(
         .with_repartition_windows(ballista_config.repartition_windows())
         .with_parquet_pruning(ballista_config.parquet_pruning());
     let config = propagate_ballista_configs(config, ballista_config);
+    // TODO: copy over table_factories
 
     let session_state = session_builder(config);
     Arc::new(SessionContext::with_state(session_state))

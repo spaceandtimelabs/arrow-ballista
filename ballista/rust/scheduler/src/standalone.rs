@@ -28,9 +28,13 @@ use ballista_core::{
 use datafusion_proto::protobuf::LogicalPlanNode;
 use log::info;
 use std::{net::SocketAddr, sync::Arc};
+use std::collections::HashMap;
 use tokio::net::TcpListener;
+use datafusion::datasource::datasource::TableProviderFactory;
 
-pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
+pub async fn new_standalone_scheduler(
+    table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
+) -> Result<SocketAddr> {
     let client = StandaloneClient::try_new_temporary()?;
 
     let mut scheduler_server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode> =
@@ -38,6 +42,7 @@ pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
             "localhost:50050".to_owned(),
             Arc::new(client),
             BallistaCodec::default(),
+            table_factories,
         );
     scheduler_server.init().await?;
     let server = SchedulerGrpcServer::new(scheduler_server.clone());

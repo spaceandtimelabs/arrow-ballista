@@ -542,6 +542,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerGrpc
 
 #[cfg(all(test, feature = "sled"))]
 mod test {
+    use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -571,6 +572,7 @@ mod test {
                 "localhost:50050".to_owned(),
                 state_storage.clone(),
                 BallistaCodec::default(),
+                HashMap::default(),
             );
         scheduler.init().await?;
         let exec_meta = ExecutorRegistration {

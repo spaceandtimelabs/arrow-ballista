@@ -142,7 +142,7 @@ impl ColumnarValue {
                 ScalarValue::Int64(_) => &DataType::Int64,
                 ScalarValue::Float32(_) => &DataType::Float32,
                 ScalarValue::Float64(_) => &DataType::Float64,
-                _ => unimplemented!(),
+                _ => unimplemented!("ColumnarValue::data_type"),
             },
         }
     }

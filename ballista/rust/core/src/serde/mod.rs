@@ -116,7 +116,7 @@ impl PhysicalExtensionCodec for DefaultPhysicalExtensionCodec {
         _registry: &dyn FunctionRegistry,
     ) -> Result<Arc<dyn ExecutionPlan>, BallistaError> {
         Err(BallistaError::NotImplemented(
-            "PhysicalExtensionCodec is not provided".to_string(),
+            "PhysicalExtensionCodec is not provided for decode".to_string(),
         ))
     }
 
@@ -126,7 +126,7 @@ impl PhysicalExtensionCodec for DefaultPhysicalExtensionCodec {
         _buf: &mut Vec<u8>,
     ) -> Result<(), BallistaError> {
         Err(BallistaError::NotImplemented(
-            "PhysicalExtensionCodec is not provided".to_string(),
+            "PhysicalExtensionCodec is not provided for encode".to_string(),
         ))
     }
 }

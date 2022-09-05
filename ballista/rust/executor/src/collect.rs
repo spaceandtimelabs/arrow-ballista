@@ -73,7 +73,7 @@ impl ExecutionPlan for CollectExec {
         self: Arc<Self>,
         _children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        unimplemented!()
+        unimplemented!("ExecutionPlan::with_new_children")
     }
 
     fn execute(

@@ -33,3 +33,4 @@ pub mod utils;
 
 #[macro_use]
 pub mod serde;
+pub mod table_factories;

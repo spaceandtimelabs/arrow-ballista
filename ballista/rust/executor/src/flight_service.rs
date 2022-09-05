@@ -80,6 +80,7 @@ impl FlightService for BallistaFlightService {
     type ListFlightsStream = BoxedFlightStream<FlightInfo>;
 
     async fn do_get(
+        // TODO: copy this
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
@@ -220,6 +221,7 @@ fn create_flight_iter(
 }
 
 async fn stream_flight_data<T>(
+    // TODO: copy this
     reader: FileReader<T>,
     tx: FlightDataSender,
 ) -> Result<(), Status>

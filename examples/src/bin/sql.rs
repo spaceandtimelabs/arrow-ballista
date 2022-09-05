@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use ballista::prelude::*;
 use datafusion::prelude::CsvReadOptions;
 
@@ -25,7 +26,7 @@ async fn main() -> Result<()> {
     let config = BallistaConfig::builder()
         .set("ballista.shuffle.partitions", "4")
         .build()?;
-    let ctx = BallistaContext::remote("localhost", 50050, &config).await?;
+    let ctx = BallistaContext::remote("localhost", 50050, &config, HashMap::new()).await?;
 
     // register csv file with the execution context
     ctx.register_csv(

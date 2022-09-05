@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use crate::metrics::LoggingMetricsCollector;
 use crate::{execution_loop, executor::Executor, flight_service::BallistaFlightService};
 use arrow_flight::flight_service_server::FlightServiceServer;
@@ -35,6 +36,7 @@ use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tonic::transport::Channel;
 use uuid::Uuid;
+use datafusion::datasource::datasource::TableProviderFactory;
 
 pub async fn new_standalone_executor<
     T: 'static + AsLogicalPlan,
@@ -43,6 +45,7 @@ pub async fn new_standalone_executor<
     scheduler: SchedulerGrpcClient<Channel>,
     concurrent_tasks: usize,
     codec: BallistaCodec<T, U>,
+    table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
 ) -> Result<()> {
     // Let the OS assign a random, free port
     let listener = TcpListener::bind("localhost:0").await?;
@@ -77,7 +80,7 @@ pub async fn new_standalone_executor<
     let executor = Arc::new(Executor::new(
         executor_meta,
         &work_dir,
-        Arc::new(RuntimeEnv::new(config).unwrap()),
+        Arc::new(RuntimeEnv::new(config, table_factories).unwrap()),
         Arc::new(LoggingMetricsCollector::default()),
         concurrent_tasks,
     ));

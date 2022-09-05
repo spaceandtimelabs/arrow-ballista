@@ -56,6 +56,7 @@ use std::{
     sync::Arc,
     time::{Instant, SystemTime},
 };
+use std::collections::HashMap;
 use structopt::StructOpt;
 
 #[cfg(feature = "snmalloc")]
@@ -348,7 +349,7 @@ async fn benchmark_ballista(opt: BallistaBenchmarkOpt) -> Result<()> {
         .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
 
     let ctx =
-        BallistaContext::remote(opt.host.unwrap().as_str(), opt.port.unwrap(), &config)
+        BallistaContext::remote(opt.host.unwrap().as_str(), opt.port.unwrap(), &config, HashMap::default())
             .await
             .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
 
@@ -446,6 +447,7 @@ async fn loadtest_ballista(opt: BallistaLoadtestOpt) -> Result<()> {
                 opt.host.clone().unwrap().as_str(),
                 opt.port.unwrap(),
                 &config,
+                HashMap::default(),
             )
             .await
             .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?,
@@ -863,7 +865,7 @@ fn get_schema(table: &str) -> Schema {
             Field::new("r_comment", DataType::Utf8, false),
         ]),
 
-        _ => unimplemented!(),
+        _ => unimplemented!("get_schema"),
     }
 }
 
@@ -1324,7 +1326,7 @@ mod tests {
                 Field::new("totacctbal", DataType::Float64, true),
             ]),
 
-            _ => unimplemented!(),
+            _ => unimplemented!("get_answer_schema"),
         }
     }
 

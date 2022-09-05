@@ -52,8 +52,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, pin::Pin};
+use std::collections::HashMap;
 use tonic::codegen::StdError;
 use tonic::transport::{Channel, Error, Server};
+use datafusion::datasource::datasource::TableProviderFactory;
 
 /// Stream data to disk in Arrow IPC format
 
@@ -229,6 +231,7 @@ pub fn create_df_ctx_with_ballista_query_planner<T: 'static + AsLogicalPlan>(
     scheduler_url: String,
     session_id: String,
     config: &BallistaConfig,
+    table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
 ) -> SessionContext {
     let planner: Arc<BallistaQueryPlanner<T>> =
         Arc::new(BallistaQueryPlanner::new(scheduler_url, config.clone()));
@@ -238,7 +241,7 @@ pub fn create_df_ctx_with_ballista_query_planner<T: 'static + AsLogicalPlan>(
         .with_information_schema(true);
     let mut session_state = SessionState::with_config_rt(
         session_config,
-        Arc::new(RuntimeEnv::new(RuntimeConfig::default()).unwrap()),
+        Arc::new(RuntimeEnv::new(RuntimeConfig::default(), table_factories).unwrap()),
     )
     .with_query_planner(planner);
     session_state.session_id = session_id;

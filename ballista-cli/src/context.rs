@@ -17,6 +17,7 @@
 
 //! Context (remote or local)
 
+use std::collections::HashMap;
 use datafusion::dataframe::DataFrame;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::{SessionConfig, SessionContext};
@@ -61,7 +62,7 @@ impl BallistaContext {
         let config = builder
             .build()
             .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
-        let remote_ctx = BallistaContext::remote(host, port, &config)
+        let remote_ctx = BallistaContext::remote(host, port, &config, HashMap::default())
             .await
             .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
         Ok(Self(remote_ctx))
