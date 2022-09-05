@@ -45,7 +45,7 @@ use ballista_scheduler::state::backend::{StateBackend, StateBackendClient};
 
 use ballista_core::config::TaskSchedulingPolicy;
 use ballista_core::serde::BallistaCodec;
-
+use ballista_core::utils::default_session_builder;
 use log::info;
 
 #[macro_use]
@@ -61,12 +61,15 @@ mod config {
     ));
 }
 
-use ballista_core::utils::create_grpc_server;
+use ballista_core::utils::{create_grpc_server, TableProviderSessionBuilder};
 use ballista_scheduler::config::SlotsPolicy;
 #[cfg(feature = "flight-sql")]
 use ballista_scheduler::flight_sql::FlightSqlServiceImpl;
 use config::prelude::*;
 use tracing_subscriber::EnvFilter;
+use datafusion::datasource::datasource::TableProviderFactory;
+#[cfg(feature = "delta")]
+use deltalake::delta_datafusion::{DeltaTableFactory, DeltaLogicalCodec, DeltaPhysicalCodec};
 
 async fn start_server(
     scheduler_name: String,
@@ -87,25 +90,32 @@ async fn start_server(
         scheduling_policy
     );
 
+    #[cfg(feature = "delta")]
+    let session_builder = {
+        let factory: Arc<(dyn TableProviderFactory + 'static)> =
+            Arc::new(DeltaTableFactory {});
+        let factories = std::collections::HashMap::from([("deltatable".to_string(), factory)]);
+        TableProviderSessionBuilder::new(factories)
+    };
+    #[cfg(not(feature = "delta"))]
+    let session_builder = DefaultSessionBuilder {};
+
+    #[cfg(feature = "delta")]
+    let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> = BallistaCodec::new(Arc::new(DeltaLogicalCodec {}), Arc::new(DeltaPhysicalCodec {}));
+    #[cfg(not(feature = "delta"))]
+    let codec = BallistaCodec::default();
+
     let mut scheduler_server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode> =
-        match scheduling_policy {
-            TaskSchedulingPolicy::PushStaged => SchedulerServer::new_with_policy(
+            SchedulerServer::new_with_policy(
                 scheduler_name,
                 config_backend.clone(),
                 scheduling_policy,
                 slots_policy,
-                BallistaCodec::default(),
+                codec,
+                Arc::new(session_builder),
                 event_loop_buffer_size,
                 advertise_endpoint,
-            ),
-            _ => SchedulerServer::new(
-                scheduler_name,
-                config_backend.clone(),
-                BallistaCodec::default(),
-                event_loop_buffer_size,
-                advertise_endpoint,
-            ),
-        };
+            );
 
     scheduler_server.init().await?;
 

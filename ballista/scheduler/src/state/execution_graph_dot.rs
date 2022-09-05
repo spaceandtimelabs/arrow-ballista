@@ -43,6 +43,7 @@ use object_store::path::Path;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::sync::Arc;
+use datafusion::physical_plan::joins::{CrossJoinExec, HashJoinExec};
 
 /// Utility for producing dot diagrams from execution graphs
 pub struct ExecutionGraphDot {
