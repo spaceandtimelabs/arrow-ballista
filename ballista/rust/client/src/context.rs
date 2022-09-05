@@ -77,7 +77,7 @@ impl BallistaContextState {
 
 pub struct BallistaContext {
     state: Arc<Mutex<BallistaContextState>>,
-    context: Arc<SessionContext>,
+    context: Arc<Mutex<SessionContext>>,
 }
 
 impl BallistaContext {
@@ -133,7 +133,7 @@ impl BallistaContext {
 
         Ok(Self {
             state: Arc::new(Mutex::new(state)),
-            context: Arc::new(ctx),
+            context: Arc::new(Mutex::new(ctx)),
         })
     }
 
@@ -205,7 +205,7 @@ impl BallistaContext {
 
         Ok(Self {
             state: Arc::new(Mutex::new(state)),
-            context: Arc::new(ctx),
+            context: Arc::new(Mutex::new(ctx)),
         })
     }
 
@@ -221,7 +221,7 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.read_avro(path.to_str().unwrap(), options).await?;
+        let df = ctx.lock().read_avro(path.to_str().unwrap(), options).await?;
         Ok(df)
     }
 
@@ -237,7 +237,7 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.read_parquet(path.to_str().unwrap(), options).await?;
+        let df = ctx.lock().read_parquet(path.to_str().unwrap(), options).await?;
         Ok(df)
     }
 
@@ -253,7 +253,7 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.read_csv(path.to_str().unwrap(), options).await?;
+        let df = ctx.lock().read_csv(path.to_str().unwrap(), options).await?;
         Ok(df)
     }
 
@@ -349,11 +349,11 @@ impl BallistaContext {
         // the show tables、 show columns sql can not run at scheduler because the tables is store at client
         if is_show {
             let state = self.state.lock();
-            ctx = Arc::new(SessionContext::with_config(
+            ctx = Arc::new(Mutex::new(SessionContext::with_config(
                 SessionConfig::new().with_information_schema(
                     state.config.default_with_information_schema(),
                 ),
-            ));
+            )));
         }
 
         // register tables with DataFusion context
@@ -362,8 +362,8 @@ impl BallistaContext {
             for (name, prov) in &state.tables {
                 // ctx is shared between queries, check table exists or not before register
                 let table_ref = TableReference::Bare { table: name };
-                if !ctx.table_exist(table_ref)? {
-                    ctx.register_table(
+                if !ctx.lock().table_exist(table_ref)? {
+                    ctx.lock().register_table(
                         TableReference::Bare { table: name },
                         Arc::clone(prov),
                     )?;
@@ -371,7 +371,7 @@ impl BallistaContext {
             }
         }
 
-        let plan = ctx.create_logical_plan(sql)?;
+        let plan = ctx.lock().create_logical_plan(sql)?;
 
         match plan {
             LogicalPlan::CreateExternalTable(CreateExternalTable {
@@ -384,7 +384,7 @@ impl BallistaContext {
                 ref table_partition_cols,
                 ref if_not_exists,
             }) => {
-                let table_exists = ctx.table_exist(name.as_str())?;
+                let table_exists = ctx.lock().table_exist(name.as_str())?;
 
                 match (if_not_exists, table_exists) {
                     (_, false) => match file_type.as_str() {
@@ -399,7 +399,7 @@ impl BallistaContext {
                                     .table_partition_cols(table_partition_cols.to_vec()),
                             )
                             .await?;
-                            Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                            Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
                         "PARQUET" => {
                             self.register_parquet(
@@ -409,7 +409,7 @@ impl BallistaContext {
                                     .table_partition_cols(table_partition_cols.to_vec()),
                             )
                             .await?;
-                            Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                            Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
                         "AVRO" => {
                             self.register_avro(
@@ -419,7 +419,7 @@ impl BallistaContext {
                                     .table_partition_cols(table_partition_cols.to_vec()),
                             )
                             .await?;
-                            Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                            Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
                         _ => Err(DataFusionError::NotImplemented(format!(
                             "Unsupported file type {:?}.",
@@ -427,7 +427,7 @@ impl BallistaContext {
                         ))),
                     },
                     (true, true) => {
-                        Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                        Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                     }
                     (false, true) => Err(DataFusionError::Execution(format!(
                         "Table '{:?}' already exists",
@@ -435,15 +435,62 @@ impl BallistaContext {
                     ))),
                 }
             }
-            _ => ctx.sql(sql).await,
+            _ => ctx.lock().sql(sql).await,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
+    use std::any::Any;
+    use std::borrow::{Borrow, BorrowMut};
+    use std::sync::Arc;
+    use datafusion::arrow::datatypes::SchemaRef;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
+    use datafusion::datasource::{TableProvider, TableType};
+    use datafusion::datasource::datasource::TableProviderFactory;
+    use datafusion::execution::context::SessionState;
+    use datafusion::logical_expr::Expr;
+    use datafusion::physical_plan::ExecutionPlan;
+
+    struct TestTableProvider {}
+
+    impl TestTableProvider {}
+
+    #[async_trait]
+    impl TableProvider for TestTableProvider {
+        fn as_any(&self) -> &dyn Any {
+            unimplemented!("TestTableProvider is a stub for testing.")
+        }
+
+        fn schema(&self) -> SchemaRef {
+            unimplemented!("TestTableProvider is a stub for testing.")
+        }
+
+        fn table_type(&self) -> TableType {
+            unimplemented!("TestTableProvider is a stub for testing.")
+        }
+
+        async fn scan(
+            &self,
+            _ctx: &SessionState,
+            _projection: &Option<Vec<usize>>,
+            _filters: &[Expr],
+            _limit: Option<usize>,
+        ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
+            unimplemented!("TestTableProvider is a stub for testing.")
+        }
+    }
+
+    struct TestTableFactory {}
+
+    impl TableProviderFactory for TestTableFactory {
+        fn create(&self, _name: &str, _path: &str) -> Arc<dyn TableProvider> {
+            Arc::new(TestTableProvider {})
+        }
+    }
 
     #[tokio::test]
     #[cfg(feature = "standalone")]
@@ -454,6 +501,24 @@ mod tests {
             .unwrap();
         let df = context.sql("SELECT 1;").await.unwrap();
         df.collect().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "standalone")]
+    async fn test_register_table_factory() {
+        use super::*;
+        let mut context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+            .await
+            .unwrap();
+        context.context.lock().register_table_factory("DELTATABLE", Arc::new(TestTableFactory {}));
+
+        let sql = "CREATE EXTERNAL TABLE dt STORED AS DELTATABLE LOCATION 's3://bucket/schema/table';";
+        context.sql(sql).await.unwrap();
+
+        let cat = context.context.lock().catalog("datafusion").unwrap();
+        let schema = cat.schema("public").unwrap();
+        let exists = schema.table_exist("dt");
+        assert!(exists, "Table should have been created!");
     }
 
     #[tokio::test]
