@@ -19,13 +19,12 @@
 
 use log::info;
 use parking_lot::Mutex;
-use sqlparser::ast::Statement;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use ballista_core::config::BallistaConfig;
 use ballista_core::serde::protobuf::scheduler_grpc_client::SchedulerGrpcClient;
-use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair};
+use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair, PhysicalPlanNode};
 use ballista_core::utils::{
     create_df_ctx_with_ballista_query_planner, create_grpc_client_connection,
 };
@@ -33,15 +32,16 @@ use datafusion_proto::protobuf::LogicalPlanNode;
 
 use datafusion::catalog::TableReference;
 use datafusion::dataframe::DataFrame;
-use datafusion::datasource::TableProvider;
+use datafusion::datasource::datasource::TableProviderFactory;
+use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::{DataFusionError, Result};
-use datafusion::logical_plan::{
-    source_as_provider, CreateExternalTable, LogicalPlan, TableScan,
-};
+use datafusion::logical_expr::{CreateExternalTable, LogicalPlan, TableScan};
 use datafusion::prelude::{
     AvroReadOptions, CsvReadOptions, ParquetReadOptions, SessionConfig, SessionContext,
 };
 use datafusion::sql::parser::{DFParser, Statement as DFStatement};
+use datafusion::sql::sqlparser::ast::Statement;
+use datafusion_proto::logical_plan::{DefaultLogicalExtensionCodec, LogicalExtensionCodec, PhysicalExtensionCodec};
 
 struct BallistaContextState {
     /// Ballista configuration
@@ -126,6 +126,8 @@ impl BallistaContext {
                 scheduler_url,
                 remote_session_id,
                 state.config(),
+                HashMap::new(),
+                Arc::new(DefaultLogicalExtensionCodec {}),
             )
         };
 
@@ -139,13 +141,20 @@ impl BallistaContext {
     pub async fn standalone(
         config: &BallistaConfig,
         concurrent_tasks: usize,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
+        logical_codec: Arc<dyn LogicalExtensionCodec>,
+        physical_codec: Arc<dyn PhysicalExtensionCodec>,
     ) -> ballista_core::error::Result<Self> {
-        use ballista_core::serde::protobuf::PhysicalPlanNode;
         use ballista_core::serde::BallistaCodec;
 
         log::info!("Running in local mode. Scheduler will be run in-proc");
 
-        let addr = ballista_scheduler::standalone::new_standalone_scheduler().await?;
+        let addr = ballista_scheduler::standalone::new_standalone_scheduler(
+            table_factories.clone(),
+            logical_codec.clone(),
+            physical_codec.clone()
+        )
+        .await?;
         let scheduler_url = format!("http://localhost:{}", addr.port());
         let mut scheduler = loop {
             match SchedulerGrpcClient::connect(scheduler_url.clone()).await {
@@ -185,16 +194,16 @@ impl BallistaContext {
                 scheduler_url,
                 remote_session_id,
                 config,
+                table_factories,
+                logical_codec.clone(),
             )
         };
 
-        let default_codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> =
-            BallistaCodec::default();
-
+        let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> = BallistaCodec::new(logical_codec, physical_codec);
         ballista_executor::new_standalone_executor(
             scheduler,
             concurrent_tasks,
-            default_codec,
+            codec,
         )
         .await?;
 
@@ -412,10 +421,26 @@ impl BallistaContext {
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
                         }
-                        _ => Err(DataFusionError::NotImplemented(format!(
-                            "Unsupported file type {:?}.",
-                            file_type
-                        ))),
+                        file_type => {
+                            let file_type = file_type.to_lowercase();
+                            let state = ctx.state.read().clone();
+                            let factory = state
+                                .runtime_env
+                                .table_factories
+                                .get(file_type.as_str())
+                                .ok_or_else(|| {
+                                    DataFusionError::Execution(format!(
+                                        "Ballista unable to find factory for {}",
+                                        file_type
+                                    ))
+                                })?;
+                            let table = (*factory).create(location.as_str()).await?;
+                            self.register_table(name.as_str(), table.clone())?;
+
+                            let df = self.context.read_table(table)?;
+                            let plan = df.to_logical_plan()?;
+                            Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                        }
                     },
                     (true, true) => {
                         Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
@@ -433,18 +458,83 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
+    use datafusion::arrow::util::pretty::pretty_format_batches;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use ballista_core::serde::DefaultPhysicalExtensionCodec;
+    use datafusion_proto::logical_plan::DefaultLogicalExtensionCodec;
+    use deltalake::delta_datafusion::DeltaPhysicalCodec;
 
     #[tokio::test]
     #[cfg(feature = "standalone")]
     async fn test_standalone_mode() {
         use super::*;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &BallistaConfig::new().unwrap(),
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {}),
+        )
+        .await
+        .unwrap();
         let df = context.sql("SELECT 1;").await.unwrap();
         df.collect().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(all(feature = "standalone", feature = "delta"))]
+    async fn test_register_table_factory() {
+        use super::*;
+        use deltalake::delta_datafusion::DeltaTableFactory;
+        use deltalake::delta_datafusion::DeltaLogicalCodec;
+
+        let factory: Arc<(dyn TableProviderFactory + 'static)> =
+            Arc::new(DeltaTableFactory {});
+        let factories = HashMap::from([("deltatable".to_string(), factory)]);
+        let cfg = BallistaConfig::new().unwrap();
+        let context = BallistaContext::standalone(&cfg, 1, factories, Arc::new(DeltaLogicalCodec {}), Arc::new(DeltaPhysicalCodec {})).await.unwrap();
+
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("testdata/delta-0.8.0");
+        let sql = format!(
+            r#"
+            CREATE EXTERNAL TABLE dt
+            STORED AS DELTATABLE
+            LOCATION '{}';
+            "#,
+            d.to_str().unwrap()
+        );
+        context.sql(sql.as_str()).await.unwrap();
+
+        let exists = context.state.lock().tables.contains_key("dt");
+        assert!(exists, "Table should have been created!");
+
+        // --- query MemTable
+        let df = context.sql("select * from dt").await.unwrap();
+        let res1 = df.collect().await.unwrap();
+        let expected1 = vec![
+            "+-------+",
+            "| value |",
+            "+-------+",
+            "| 0     |",
+            "| 1     |",
+            "| 2     |",
+            "| 4     |",
+            "+-------+"
+        ];
+        assert_eq!(
+            expected1,
+            pretty_format_batches(&*res1)
+                .unwrap()
+                .to_string()
+                .trim()
+                .lines()
+                .collect::<Vec<&str>>()
+        );
     }
 
     #[tokio::test]
@@ -454,9 +544,15 @@ mod tests {
         use std::fs::File;
         use std::io::Write;
         use tempfile::TempDir;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &BallistaConfig::new().unwrap(),
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {})
+        )
+        .await
+        .unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -504,7 +600,9 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
+            .await
+            .unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -556,7 +654,9 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
+            .await
+            .unwrap();
 
         context
             .register_parquet(
@@ -625,7 +725,9 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
+            .await
+            .unwrap();
 
         let sql = "select EXTRACT(year FROM to_timestamp('2020-09-08T12:13:14+00:00'));";
 
@@ -645,7 +747,9 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
+            .await
+            .unwrap();
 
         let df = context
             .sql("SELECT 1 as NUMBER union SELECT 1 as NUMBER;")
@@ -707,7 +811,9 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
+            .await
+            .unwrap();
 
         context
             .register_parquet(

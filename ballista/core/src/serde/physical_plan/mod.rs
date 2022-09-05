@@ -23,16 +23,17 @@ use prost::Message;
 
 use datafusion::arrow::compute::SortOptions;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::config::ConfigOptions;
+use datafusion::datasource::file_format::file_type::FileCompressionType;
 use datafusion::datasource::listing::PartitionedFile;
 use datafusion::datasource::object_store::ObjectStoreUrl;
 use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::logical_plan::window_frames::WindowFrame;
-use datafusion::logical_plan::FunctionRegistry;
+use datafusion::execution::FunctionRegistry;
+use datafusion::logical_expr::WindowFrame;
 use datafusion::physical_plan::aggregates::{create_aggregate_expr, AggregateMode};
 use datafusion::physical_plan::aggregates::{AggregateExec, PhysicalGroupBy};
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
-use datafusion::physical_plan::cross_join::CrossJoinExec;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::explain::ExplainExec;
 use datafusion::physical_plan::expressions::{Column, PhysicalSortExpr};
@@ -40,8 +41,6 @@ use datafusion::physical_plan::file_format::{
     AvroExec, CsvExec, FileScanConfig, ParquetExec,
 };
 use datafusion::physical_plan::filter::FilterExec;
-use datafusion::physical_plan::hash_join::{HashJoinExec, PartitionMode};
-use datafusion::physical_plan::join_utils::{ColumnIndex, JoinFilter};
 use datafusion::physical_plan::limit::{GlobalLimitExec, LocalLimitExec};
 use datafusion::physical_plan::projection::ProjectionExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
@@ -52,7 +51,10 @@ use datafusion::physical_plan::windows::{create_window_expr, WindowAggExec};
 use datafusion::physical_plan::{
     AggregateExpr, ExecutionPlan, Partitioning, PhysicalExpr, WindowExpr,
 };
+use datafusion::physical_plan::joins::{CrossJoinExec, HashJoinExec, PartitionMode};
+use datafusion::physical_plan::joins::utils::{ColumnIndex, JoinFilter};
 use datafusion_proto::from_proto::parse_expr;
+use datafusion_proto::logical_plan::PhysicalExtensionCodec;
 
 use crate::error::BallistaError;
 use crate::execution_plans::{
@@ -68,7 +70,6 @@ use crate::serde::protobuf::{PhysicalExtensionNode, PhysicalPlanNode};
 use crate::serde::scheduler::PartitionLocation;
 use crate::serde::{
     byte_to_string, proto_error, protobuf, str_to_byte, AsExecutionPlan,
-    PhysicalExtensionCodec,
 };
 use crate::{convert_required, into_physical_plan, into_required};
 
@@ -159,6 +160,7 @@ impl AsExecutionPlan for PhysicalPlanNode {
                 decode_scan_config(scan.base_conf.as_ref().unwrap())?,
                 scan.has_header,
                 str_to_byte(&scan.delimiter)?,
+                FileCompressionType::UNCOMPRESSED, // TODO: include in scan?
             ))),
             PhysicalPlanType::ParquetScan(scan) => {
                 let predicate = scan
@@ -311,7 +313,7 @@ impl AsExecutionPlan for PhysicalPlanNode {
                                     &[window_node_expr],
                                     &[],
                                     &[],
-                                    Some(WindowFrame::default()),
+                                    Some(Arc::new(WindowFrame::default())),
                                     &physical_schema,
                                 )?)
                             }
@@ -1266,6 +1268,7 @@ fn decode_scan_config(
         projection,
         limit: proto.limit.as_ref().map(|sl| sl.limit as usize),
         table_partition_cols: vec![],
+        config_options: ConfigOptions::new().into_shareable(),
     })
 }
 

@@ -25,12 +25,10 @@ use datafusion::datasource::listing::PartitionedFile;
 use datafusion::physical_plan::aggregates::AggregateExec;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
-use datafusion::physical_plan::cross_join::CrossJoinExec;
 use datafusion::physical_plan::file_format::{
     AvroExec, CsvExec, FileScanConfig, NdJsonExec, ParquetExec,
 };
 use datafusion::physical_plan::filter::FilterExec;
-use datafusion::physical_plan::hash_join::HashJoinExec;
 use datafusion::physical_plan::limit::{GlobalLimitExec, LocalLimitExec};
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::projection::ProjectionExec;
@@ -43,6 +41,7 @@ use object_store::path::Path;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::sync::Arc;
+use datafusion::physical_plan::joins::{CrossJoinExec, HashJoinExec};
 
 /// Utility for producing dot diagrams from execution graphs
 pub struct ExecutionGraphDot {

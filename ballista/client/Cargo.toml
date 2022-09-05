@@ -31,8 +31,9 @@ rust-version = "1.59"
 ballista-core = { path = "../core", version = "0.9.0" }
 ballista-executor = { path = "../executor", version = "0.9.0", optional = true }
 ballista-scheduler = { path = "../scheduler", version = "0.9.0", optional = true }
-datafusion = "13.0.0"
-datafusion-proto = "13.0.0"
+deltalake = { git = "https://github.com/spaceandtimelabs/delta-rs.git", rev = "c5c07b4abcb09b78e3fd0d559fbeef8664912149", features = ["datafusion-ext"], optional = true }
+datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "4b5d7207c12375374ff27c9f974c8a0aea86e028" }
+datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "4b5d7207c12375374ff27c9f974c8a0aea86e028" }
 futures = "0.3"
 log = "0.4"
 parking_lot = "0.12"
@@ -45,4 +46,5 @@ default = []
 hdfs = ["ballista-core/hdfs"]
 hdfs3 = ["ballista-core/hdfs3"]
 s3 = ["ballista-core/s3"]
+delta = ["deltalake"]
 standalone = ["ballista-executor", "ballista-scheduler"]
