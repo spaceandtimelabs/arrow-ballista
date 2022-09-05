@@ -87,3 +87,8 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+minio:
+  auth:
+    rootUser: minio
+    rootPassword: minio123
