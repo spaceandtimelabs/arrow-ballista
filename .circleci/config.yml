@@ -1,0 +1,84 @@
+# CircleCI configuration file
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: rust:1.62.1-buster
+    steps:
+      - checkout
+      - run: |
+          export DOCKER_TAG=$(git tag --points-at HEAD)
+          if [ -z "$DOCKER_TAG" ]
+          then
+            export DOCKER_TAG=$(echo $(git describe --tags --abbrev=0) | awk -F. -v OFS=. '{$2 += 1 ; print}')
+            git tag $DOCKER_TAG
+            git push origin --tags
+          fi
+          echo $DOCKER_TAG > /root/project/docker-tag.txt
+          apt-get update
+          apt-get install -y cmake
+          mkdir -p $HOME/d/protoc
+          cd $HOME/d/protoc
+          export PROTO_ZIP="protoc-21.4-linux-x86_64.zip"
+          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v21.4/$PROTO_ZIP
+          unzip $PROTO_ZIP
+          export PATH=$PATH:$HOME/d/protoc/bin
+          protoc --version
+          cd -
+          cargo build --release --all
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - project/docker-tag.txt
+            - project/helm
+            - project/target/release/ballista-scheduler
+            - project/target/release/ballista-executor
+            - project/scheduler.Dockerfile
+            - project/executor.Dockerfile
+
+  deploy_docker:
+    docker:
+      - image: docker:17.05.0-ce-git
+    steps:
+      - setup_remote_docker
+      - attach_workspace:
+          at: /root
+      - run: |
+          export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
+          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
+          docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
+          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
+
+  deploy_helm:
+    docker:
+      - image: mcr.microsoft.com/azure-cli
+    steps:
+      - attach_workspace:
+          at: /root
+      - run: |
+          set -x
+          export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          cd /root/project/helm/ballista     
+          az login --username=$AZ_USER --password=$AZ_PASS
+          az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
+          kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          kubectl rollout status --watch --timeout=2m statefulSet ballista-scheduler
+          kubectl rollout status --watch --timeout=2m statefulSet ballista-executor
+
+workflows:
+  main_workflow:
+    jobs:
+      - build
+      - deploy_docker:
+          requires:
+            - build
+      - deploy_helm:
+          requires:
+            - deploy_docker

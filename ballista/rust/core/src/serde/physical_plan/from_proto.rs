@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use datafusion::arrow::datatypes::Schema;
+use datafusion::common::ScalarValue;
 use datafusion::datasource::listing::{FileRange, PartitionedFile};
 use datafusion::datasource::object_store::ObjectStoreUrl;
 use datafusion::execution::context::ExecutionProps;
@@ -42,7 +43,7 @@ use datafusion::physical_plan::{ColumnStatistics, PhysicalExpr, Statistics};
 use object_store::path::Path;
 use object_store::ObjectMeta;
 
-use protobuf::physical_expr_node::ExprType;
+use crate::serde::protobuf::physical_expr_node::ExprType;
 
 use crate::convert_required;
 use crate::error::BallistaError;
