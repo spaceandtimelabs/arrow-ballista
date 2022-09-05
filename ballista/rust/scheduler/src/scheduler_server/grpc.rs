@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::convert::TryInto;
 use ballista_core::config::{BallistaConfig, TaskSchedulingPolicy};
 use ballista_core::serde::protobuf::execute_query_params::{OptionalSessionId, Query};
 
@@ -39,8 +40,6 @@ use datafusion_proto::logical_plan::AsLogicalPlan;
 use futures::TryStreamExt;
 use log::{debug, error, info, warn};
 
-// use http_body::Body;
-use std::convert::TryInto;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -26,7 +26,6 @@ use std::{
 };
 
 use crate::error::{ballista_error, BallistaError, Result};
-use crate::serde::protobuf::{self};
 use crate::serde::scheduler::Action;
 
 use arrow_flight::utils::flight_data_to_arrow_batch;
@@ -45,6 +44,7 @@ use futures::{Stream, StreamExt};
 use log::debug;
 use prost::Message;
 use tonic::Streaming;
+use crate::serde::protobuf;
 
 /// Client for interacting with Ballista executors.
 #[derive(Clone)]
@@ -80,12 +80,16 @@ impl BallistaClient {
         stage_id: usize,
         partition_id: usize,
         path: &str,
+        host: &str,
+        port: u16,
     ) -> Result<SendableRecordBatchStream> {
         let action = Action::FetchPartition {
             job_id: job_id.to_string(),
             stage_id,
             partition_id,
             path: path.to_owned(),
+            host: host.to_string(),
+            port
         };
         self.execute_action(&action).await
     }
