@@ -26,7 +26,6 @@ use std::{
 };
 
 use crate::error::{ballista_error, BallistaError, Result};
-use crate::serde::protobuf::{self};
 use crate::serde::scheduler::Action;
 
 use arrow_flight::utils::flight_data_to_arrow_batch;
@@ -45,6 +44,7 @@ use futures::{Stream, StreamExt};
 use log::debug;
 use prost::Message;
 use tonic::Streaming;
+use crate::serde::protobuf;
 
 /// Client for interacting with Ballista executors.
 #[derive(Clone)]

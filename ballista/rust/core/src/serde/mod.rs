@@ -33,12 +33,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{convert::TryInto, io::Cursor};
 
-// include the generated protobuf source as a submodule
-#[allow(clippy::all)]
-pub mod protobuf {
-    include!(concat!(env!("OUT_DIR"), "/ballista.protobuf.rs"));
-}
+pub use generated::ballista as protobuf;
 
+pub mod generated;
 pub mod physical_plan;
 pub mod scheduler;
 
