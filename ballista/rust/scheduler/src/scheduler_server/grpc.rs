@@ -39,8 +39,6 @@ use datafusion_proto::logical_plan::AsLogicalPlan;
 use futures::TryStreamExt;
 use log::{debug, error, info, warn};
 
-// use http_body::Body;
-use std::convert::TryInto;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
