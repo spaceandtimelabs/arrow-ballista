@@ -444,52 +444,42 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
-    use std::any::Any;
     use std::sync::Arc;
-    use datafusion::arrow::datatypes::SchemaRef;
+    use datafusion::arrow;
+    use datafusion::arrow::array::Int32Array;
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::arrow::util::pretty::pretty_format_batches;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
-    use datafusion::datasource::{TableProvider, TableType};
+    use datafusion::datasource::{MemTable, TableProvider};
     use datafusion::datasource::datasource::TableProviderFactory;
-    use datafusion::execution::context::SessionState;
-    use datafusion::logical_expr::Expr;
-    use datafusion::physical_plan::ExecutionPlan;
-
-    struct TestTableProvider {}
-
-    impl TestTableProvider {}
-
-    #[async_trait]
-    impl TableProvider for TestTableProvider {
-        fn as_any(&self) -> &dyn Any {
-            unimplemented!("TestTableProvider is a stub for testing.")
-        }
-
-        fn schema(&self) -> SchemaRef {
-            unimplemented!("TestTableProvider is a stub for testing.")
-        }
-
-        fn table_type(&self) -> TableType {
-            unimplemented!("TestTableProvider is a stub for testing.")
-        }
-
-        async fn scan(
-            &self,
-            _ctx: &SessionState,
-            _projection: &Option<Vec<usize>>,
-            _filters: &[Expr],
-            _limit: Option<usize>,
-        ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
-            unimplemented!("TestTableProvider is a stub for testing.")
-        }
-    }
 
     struct TestTableFactory {}
 
     impl TableProviderFactory for TestTableFactory {
         fn create(&self, _name: &str, _path: &str) -> Arc<dyn TableProvider> {
-            Arc::new(TestTableProvider {})
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("c1", DataType::Int32, true),
+                Field::new("c2", DataType::Int32, true),
+            ]));
+
+            let data = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int32Array::from(vec![Some(0), None, Some(1), None, None])),
+                    Arc::new(Int32Array::from(vec![
+                        Some(1),
+                        Some(1),
+                        Some(0),
+                        Some(1),
+                        None,
+                    ])),
+                ],
+            ).unwrap(); // TODO: Make TableProviderFactory return a result
+
+            let table = MemTable::try_new(schema, vec![vec![data]]).unwrap();
+            Arc::new(table)
         }
     }
 
@@ -516,15 +506,26 @@ mod tests {
         let sql = "CREATE EXTERNAL TABLE dt STORED AS DELTATABLE LOCATION 's3://bucket/schema/table';";
         context.sql(sql).await.unwrap();
 
-        let cat = context.context.lock().catalog("datafusion").unwrap();
-        let schema = cat.schema("public").unwrap();
-        let exists = schema.table_exist("dt");
+        let exists = context.state.lock().tables.contains_key("dt");
         assert!(exists, "Table should have been created!");
+
+        let df = context.sql("select * from df").await.unwrap();
+        let res = df.collect().await.unwrap();
+        let expected = vec![
+            "+--------------+",
+            "| MIN(test.id) |",
+            "+--------------+",
+            "| 0            |",
+            "+--------------+",
+        ];
+        assert_result_eq(expected, &*res);
     }
 
     #[tokio::test]
     #[cfg(feature = "standalone")]
     async fn test_ballista_show_tables() {
+        use datafusion::arrow;
+        use datafusion::arrow::util::pretty::pretty_format_batches;
         use super::*;
         use std::fs::File;
         use std::io::Write;
@@ -774,8 +775,6 @@ mod tests {
         use ballista_core::config::{
             BallistaConfigBuilder, BALLISTA_WITH_INFORMATION_SCHEMA,
         };
-        use datafusion::arrow;
-        use datafusion::arrow::util::pretty::pretty_format_batches;
         use datafusion::prelude::ParquetReadOptions;
 
         let config = BallistaConfigBuilder::default()
@@ -1000,19 +999,20 @@ mod tests {
 
         assert_result_eq(expected, &*res);
 
-        fn assert_result_eq(
-            expected: Vec<&str>,
-            results: &[arrow::record_batch::RecordBatch],
-        ) {
-            assert_eq!(
-                expected,
-                pretty_format_batches(results)
-                    .unwrap()
-                    .to_string()
-                    .trim()
-                    .lines()
-                    .collect::<Vec<&str>>()
-            );
-        }
+    }
+
+    fn assert_result_eq(
+        expected: Vec<&str>,
+        results: &[arrow::record_batch::RecordBatch],
+    ) {
+        assert_eq!(
+            expected,
+            pretty_format_batches(results)
+                .unwrap()
+                .to_string()
+                .trim()
+                .lines()
+                .collect::<Vec<&str>>()
+        );
     }
 }
