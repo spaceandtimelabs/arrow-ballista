@@ -444,7 +444,10 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::Write;
     use std::sync::Arc;
+    use tempfile::TempDir;
     use datafusion::arrow;
     use datafusion::arrow::array::Int32Array;
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
@@ -509,7 +512,8 @@ mod tests {
         let exists = context.state.lock().tables.contains_key("dt");
         assert!(exists, "Table should have been created!");
 
-        let df = context.sql("select * from df").await.unwrap();
+        // --- query MemTable
+        let df = context.sql("select * from dt").await.unwrap();
         let res = df.collect().await.unwrap();
         let expected = vec![
             "+--------------+",
