@@ -37,9 +37,7 @@ use datafusion::catalog::TableReference;
 use datafusion::dataframe::DataFrame;
 use datafusion::datasource::TableProvider;
 use datafusion::error::{DataFusionError, Result};
-use datafusion::logical_plan::{
-    source_as_provider, LogicalPlan, TableScan,
-};
+use datafusion::logical_plan::{source_as_provider, LogicalPlan, TableScan};
 use datafusion::prelude::{
     AvroReadOptions, CsvReadOptions, ParquetReadOptions, SessionConfig, SessionContext,
 };
@@ -221,7 +219,10 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.lock().read_avro(path.to_str().unwrap(), options).await?;
+        let df = ctx
+            .lock()
+            .read_avro(path.to_str().unwrap(), options)
+            .await?;
         Ok(df)
     }
 
@@ -237,7 +238,10 @@ impl BallistaContext {
         let path = fs::canonicalize(&path)?;
 
         let ctx = self.context.clone();
-        let df = ctx.lock().read_parquet(path.to_str().unwrap(), options).await?;
+        let df = ctx
+            .lock()
+            .read_parquet(path.to_str().unwrap(), options)
+            .await?;
         Ok(df)
     }
 
@@ -387,7 +391,9 @@ impl BallistaContext {
                                     .schema(&cmd.schema.as_ref().to_owned().into())
                                     .has_header(cmd.has_header)
                                     .delimiter(cmd.delimiter as u8)
-                                    .table_partition_cols(cmd.table_partition_cols.to_vec()),
+                                    .table_partition_cols(
+                                        cmd.table_partition_cols.to_vec(),
+                                    ),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
@@ -396,8 +402,9 @@ impl BallistaContext {
                             self.register_parquet(
                                 cmd.name.as_str(),
                                 cmd.location.as_str(),
-                                ParquetReadOptions::default()
-                                    .table_partition_cols(cmd.table_partition_cols.to_vec()),
+                                ParquetReadOptions::default().table_partition_cols(
+                                    cmd.table_partition_cols.to_vec(),
+                                ),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
@@ -406,27 +413,30 @@ impl BallistaContext {
                             self.register_avro(
                                 cmd.name.as_str(),
                                 cmd.location.as_str(),
-                                AvroReadOptions::default()
-                                    .table_partition_cols(cmd.table_partition_cols.to_vec()),
+                                AvroReadOptions::default().table_partition_cols(
+                                    cmd.table_partition_cols.to_vec(),
+                                ),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
                         file_type => {
                             let ctx = self.context.lock();
-                            let factory = ctx.table_factories.get(file_type).ok_or_else(|| {
-                                DataFusionError::Execution(format!(
-                                    "Unable to find factory for {}",
-                                    file_type
-                                ))
-                            })?;
-                            let table = (*factory).create(cmd.name.as_str(), cmd.location.as_str());
+                            let factory =
+                                ctx.table_factories.get(file_type).ok_or_else(|| {
+                                    DataFusionError::Execution(format!(
+                                        "Unable to find factory for {}",
+                                        file_type
+                                    ))
+                                })?;
+                            let table = (*factory)
+                                .create(cmd.file_type.as_str(), cmd.location.as_str());
                             self.register_table(cmd.name.as_str(), table.clone())?;
 
                             let df = ctx.read_table(table)?;
                             let plan = df.to_logical_plan()?;
                             Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
-                        },
+                        }
                     },
                     (true, true) => {
                         Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
@@ -444,24 +454,29 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::Write;
-    use std::sync::Arc;
-    use tempfile::TempDir;
+    use async_trait::async_trait;
     use datafusion::arrow;
     use datafusion::arrow::array::Int32Array;
-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
+    use datafusion::datasource::custom::CustomTable;
+    use datafusion::datasource::datasource::TableProviderFactory;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
-    use datafusion::datasource::{MemTable, TableProvider};
-    use datafusion::datasource::datasource::TableProviderFactory;
+    use datafusion::datasource::{MemTable, TableProvider, TableType};
+    use datafusion::execution::context::SessionState;
+    use datafusion::logical_expr::Expr;
+    use datafusion::physical_plan::DisplayFormatType::Default;
+    use datafusion::physical_plan::ExecutionPlan;
+    use std::any::Any;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     struct TestTableFactory {}
 
     impl TableProviderFactory for TestTableFactory {
-        fn create(&self, _name: &str, _path: &str) -> Arc<dyn TableProvider> {
+        fn create(&self, table_type: &str, path: &str) -> Arc<dyn TableProvider> {
             let schema = Arc::new(Schema::new(vec![
                 Field::new("c1", DataType::Int32, true),
                 Field::new("c2", DataType::Int32, true),
@@ -479,9 +494,11 @@ mod tests {
                         None,
                     ])),
                 ],
-            ).unwrap(); // TODO: Make TableProviderFactory return a result
+            )
+            .unwrap(); // TODO: Make TableProviderFactory return a result
 
-            let table = MemTable::try_new(schema, vec![vec![data]]).unwrap();
+            let provider = Arc::new(MemTable::try_new(schema, vec![vec![data]]).unwrap());
+            let table = CustomTable::new(table_type, path, HashMap::default(), provider);
             Arc::new(table)
         }
     }
@@ -504,7 +521,10 @@ mod tests {
         let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
             .await
             .unwrap();
-        context.context.lock().register_table_factory("DELTATABLE", Arc::new(TestTableFactory {}));
+        context
+            .context
+            .lock()
+            .register_table_factory("DELTATABLE", Arc::new(TestTableFactory {}));
 
         let sql = "CREATE EXTERNAL TABLE dt STORED AS DELTATABLE LOCATION 's3://bucket/schema/table';";
         context.sql(sql).await.unwrap();
@@ -528,8 +548,6 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "standalone")]
     async fn test_ballista_show_tables() {
-        use datafusion::arrow;
-        use datafusion::arrow::util::pretty::pretty_format_batches;
         use super::*;
         use std::fs::File;
         use std::io::Write;
@@ -1002,7 +1020,6 @@ mod tests {
         ];
 
         assert_result_eq(expected, &*res);
-
     }
 
     fn assert_result_eq(

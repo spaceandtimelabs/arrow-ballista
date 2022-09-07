@@ -209,10 +209,9 @@ async fn fetch_partition(
     // And we should also avoid to keep alive too many connections for long time.
     let host = metadata.host.as_str();
     let port = metadata.port as u16;
-    let mut ballista_client =
-        BallistaClient::try_new(host, port)
-            .await
-            .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
+    let mut ballista_client = BallistaClient::try_new(host, port)
+        .await
+        .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
     ballista_client
         .fetch_partition(
             &partition_id.job_id,

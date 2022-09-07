@@ -38,13 +38,13 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 
+use crate::serde::protobuf;
 use crate::utils::create_grpc_client_connection;
 use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt};
 use log::debug;
 use prost::Message;
 use tonic::Streaming;
-use crate::serde::protobuf;
 
 /// Client for interacting with Ballista executors.
 #[derive(Clone)]
@@ -89,7 +89,7 @@ impl BallistaClient {
             partition_id,
             path: path.to_owned(),
             host: host.to_string(),
-            port
+            port,
         };
         self.execute_action(&action).await
     }

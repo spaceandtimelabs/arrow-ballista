@@ -18,11 +18,21 @@
 use arrow_flight::flight_descriptor::DescriptorType;
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
-use arrow_flight::sql::{ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest, ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys, CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables, CommandPreparedStatementQuery, CommandPreparedStatementUpdate, CommandStatementQuery, CommandStatementUpdate, SqlInfo, TicketStatementQuery, ProstAnyExt};
-use arrow_flight::{Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse, Location, Ticket};
+use arrow_flight::sql::{
+    ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
+    ActionCreatePreparedStatementResult, CommandGetCatalogs, CommandGetCrossReference,
+    CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys,
+    CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables,
+    CommandPreparedStatementQuery, CommandPreparedStatementUpdate, CommandStatementQuery,
+    CommandStatementUpdate, ProstAnyExt, SqlInfo, TicketStatementQuery,
+};
+use arrow_flight::{
+    Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest,
+    HandshakeResponse, Location, Ticket,
+};
 use log::{error, warn};
 use std::collections::HashMap;
-use std::convert::{TryFrom};
+use std::convert::TryFrom;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -30,13 +40,17 @@ use std::time::Duration;
 use tonic::{Request, Response, Status, Streaming};
 
 use crate::scheduler_server::SchedulerServer;
+use arrow_flight::flight_service_client::FlightServiceClient;
+use arrow_flight::sql::ProstMessageExt;
 use arrow_flight::SchemaAsIpc;
 use ballista_core::config::BallistaConfig;
 use ballista_core::serde::protobuf;
+use ballista_core::serde::protobuf::action::ActionType::FetchPartition;
 use ballista_core::serde::protobuf::job_status;
 use ballista_core::serde::protobuf::CompletedJob;
 use ballista_core::serde::protobuf::JobStatus;
 use ballista_core::serde::protobuf::PhysicalPlanNode;
+use ballista_core::utils::create_grpc_client_connection;
 use datafusion::arrow;
 use datafusion::arrow::datatypes::Schema;
 use datafusion::arrow::ipc::writer::{IpcDataGenerator, IpcWriteOptions};
@@ -49,10 +63,6 @@ use tokio::time::sleep;
 use tonic::codegen::futures_core::Stream;
 use tonic::metadata::MetadataValue;
 use uuid::Uuid;
-use arrow_flight::flight_service_client::FlightServiceClient;
-use ballista_core::serde::protobuf::action::ActionType::FetchPartition;
-use ballista_core::utils::create_grpc_client_connection;
-use arrow_flight::sql::ProstMessageExt;
 
 pub struct FlightSqlServiceImpl {
     server: SchedulerServer<LogicalPlanNode, PhysicalPlanNode>,
@@ -93,9 +103,12 @@ impl FlightSqlServiceImpl {
     }
 
     fn get_ctx<T>(&self, req: &Request<T>) -> Result<Arc<SessionContext>, Status> {
-        let auth = req.metadata().get("authorization")
+        let auth = req
+            .metadata()
+            .get("authorization")
             .ok_or(Status::internal("No authorization header!"))?;
-        let str = auth.to_str()
+        let str = auth
+            .to_str()
             .map_err(|e| Status::internal(format!("Error parsing header: {}", e)))?;
         let authorization = str.to_string();
         let bearer = "Bearer ";
@@ -400,7 +413,8 @@ impl FlightSqlService for FlightSqlServiceImpl {
         let result = Ok(result);
         let output = futures::stream::iter(vec![result]);
         let str = format!("Bearer {}", token.to_string());
-        let mut resp: Response<Pin<Box<dyn Stream<Item = Result<_, _>> + Send>>> = Response::new(Box::pin(output));
+        let mut resp: Response<Pin<Box<dyn Stream<Item = Result<_, _>> + Send>>> =
+            Response::new(Box::pin(output));
         let md = MetadataValue::try_from(str)
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
         resp.metadata_mut().insert("authorization", md);
@@ -415,7 +429,8 @@ impl FlightSqlService for FlightSqlServiceImpl {
         println!("type_url: {}", message.type_url);
         if message.is::<protobuf::Action>() {
             println!("got action!");
-            let action: protobuf::Action = message.unpack()
+            let action: protobuf::Action = message
+                .unpack()
                 .map_err(|e| Status::internal(format!("{:?}", e)))?
                 .ok_or(Status::internal("Expected an Action but got None!"))?;
             println!("action={:?}", action);
@@ -426,15 +441,14 @@ impl FlightSqlService for FlightSqlServiceImpl {
 
             let addr = format!("http://{}:{}", host, port);
             println!("BallistaClient connecting to {}", addr);
-            let connection =
-                create_grpc_client_connection(addr.clone())
-                    .await
-                    .map_err(|e| {
-                        Status::internal(format!(
-                            "Error connecting to Ballista scheduler or executor at {}: {:?}",
-                            addr, e
-                        ))
-                    })?;
+            let connection = create_grpc_client_connection(addr.clone()).await.map_err(
+                |e| {
+                    Status::internal(format!(
+                        "Error connecting to Ballista scheduler or executor at {}: {:?}",
+                        addr, e
+                    ))
+                },
+            )?;
             let mut flight_client = FlightServiceClient::new(connection);
             let buf = action.encode_to_vec();
             let request = Request::new(Ticket { ticket: buf });
@@ -448,7 +462,8 @@ impl FlightSqlService for FlightSqlServiceImpl {
         }
 
         Err(Status::unimplemented(format!(
-            "do_get: The defined request is invalid: {}", message.type_url
+            "do_get: The defined request is invalid: {}",
+            message.type_url
         )))
     }
 
