@@ -38,7 +38,7 @@ use datafusion::dataframe::DataFrame;
 use datafusion::datasource::TableProvider;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_plan::{
-    source_as_provider, CreateExternalTable, LogicalPlan, TableScan,
+    source_as_provider, LogicalPlan, TableScan,
 };
 use datafusion::prelude::{
     AvroReadOptions, CsvReadOptions, ParquetReadOptions, SessionConfig, SessionContext,
@@ -374,64 +374,66 @@ impl BallistaContext {
         let plan = ctx.lock().create_logical_plan(sql)?;
 
         match plan {
-            LogicalPlan::CreateExternalTable(CreateExternalTable {
-                ref schema,
-                ref name,
-                ref location,
-                ref file_type,
-                ref has_header,
-                ref delimiter,
-                ref table_partition_cols,
-                ref if_not_exists,
-            }) => {
-                let table_exists = ctx.lock().table_exist(name.as_str())?;
+            LogicalPlan::CreateExternalTable(ref cmd) => {
+                let table_exists = ctx.lock().table_exist(cmd.name.as_str())?;
 
-                match (if_not_exists, table_exists) {
-                    (_, false) => match file_type.as_str() {
+                match (cmd.if_not_exists, table_exists) {
+                    (_, false) => match cmd.file_type.as_str() {
                         "CSV" => {
                             self.register_csv(
-                                name,
-                                location,
+                                cmd.name.as_str(),
+                                cmd.location.as_str(),
                                 CsvReadOptions::new()
-                                    .schema(&schema.as_ref().to_owned().into())
-                                    .has_header(*has_header)
-                                    .delimiter(*delimiter as u8)
-                                    .table_partition_cols(table_partition_cols.to_vec()),
+                                    .schema(&cmd.schema.as_ref().to_owned().into())
+                                    .has_header(cmd.has_header)
+                                    .delimiter(cmd.delimiter as u8)
+                                    .table_partition_cols(cmd.table_partition_cols.to_vec()),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
                         "PARQUET" => {
                             self.register_parquet(
-                                name,
-                                location,
+                                cmd.name.as_str(),
+                                cmd.location.as_str(),
                                 ParquetReadOptions::default()
-                                    .table_partition_cols(table_partition_cols.to_vec()),
+                                    .table_partition_cols(cmd.table_partition_cols.to_vec()),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
                         "AVRO" => {
                             self.register_avro(
-                                name,
-                                location,
+                                cmd.name.as_str(),
+                                cmd.location.as_str(),
                                 AvroReadOptions::default()
-                                    .table_partition_cols(table_partition_cols.to_vec()),
+                                    .table_partition_cols(cmd.table_partition_cols.to_vec()),
                             )
                             .await?;
                             Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                         }
-                        _ => Err(DataFusionError::NotImplemented(format!(
-                            "Unsupported file type {:?}.",
-                            file_type
-                        ))),
+                        file_type => {
+                            let ctx = self.context.lock();
+                            let factory = ctx.table_factories.get(file_type).ok_or_else(|| {
+                                DataFusionError::Execution(format!(
+                                    "Unable to find factory for {}",
+                                    file_type
+                                ))
+                            })?;
+                            let table = (*factory).create(cmd.name.as_str(), cmd.location.as_str());
+                            self.register_table(cmd.name.as_str(), table.clone())?;
+
+                            let df = ctx.read_table(table)?;
+                            let plan = df.to_logical_plan()?;
+                            Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                        },
                     },
                     (true, true) => {
                         Ok(Arc::new(DataFrame::new(ctx.lock().state.clone(), &plan)))
                     }
                     (false, true) => Err(DataFusionError::Execution(format!(
                         "Table '{:?}' already exists",
-                        name
+                        cmd.name
                     ))),
                 }
             }
@@ -444,7 +446,6 @@ impl BallistaContext {
 mod tests {
     use async_trait::async_trait;
     use std::any::Any;
-    use std::borrow::{Borrow, BorrowMut};
     use std::sync::Arc;
     use datafusion::arrow::datatypes::SchemaRef;
     #[cfg(feature = "standalone")]
@@ -507,7 +508,7 @@ mod tests {
     #[cfg(feature = "standalone")]
     async fn test_register_table_factory() {
         use super::*;
-        let mut context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
             .await
             .unwrap();
         context.context.lock().register_table_factory("DELTATABLE", Arc::new(TestTableFactory {}));

@@ -34,14 +34,14 @@ snmalloc = ["snmalloc-rs"]
 
 [dependencies]
 anyhow = "1"
-arrow = "22.0.0"
-arrow-flight = "22.0.0"
+arrow = { path = "../../../../arrow-rs/arrow" }
+arrow-flight = { path = "../../../../arrow-rs/arrow-flight" }
 async-trait = "0.1.41"
 ballista-core = { path = "../core", version = "0.7.0" }
 chrono = { version = "0.4", default-features = false }
 configure_me = "0.4.0"
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "d16457a0ba129b077935078e5cf89d028f598e0b" }
-datafusion-proto = { git = "https://github.com/apache/arrow-datafusion.git", rev = "d16457a0ba129b077935078e5cf89d028f598e0b" }
+datafusion = { path = "../../../../arrow-datafusion/datafusion/core" }
+datafusion-proto = { path = "../../../../arrow-datafusion/datafusion/proto" }
 futures = "0.3"
 hyper = "0.14.4"
 log = "0.4"
