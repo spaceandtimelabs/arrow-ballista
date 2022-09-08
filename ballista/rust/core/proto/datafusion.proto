@@ -110,6 +110,7 @@ message ListingTableScanNode {
   }
 }
 
+// Logical Plan to Scan a CustomTableProvider registered at runtime
 message CustomTableScanNode {
   string table_name = 1;
   string path = 2;
