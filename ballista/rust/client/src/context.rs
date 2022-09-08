@@ -31,10 +31,12 @@ use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair};
 use ballista_core::utils::{
     create_df_ctx_with_ballista_query_planner, create_grpc_client_connection,
 };
+use ballista_scheduler::standalone::new_standalone_scheduler;
 use datafusion_proto::protobuf::LogicalPlanNode;
 
 use datafusion::catalog::TableReference;
 use datafusion::dataframe::DataFrame;
+use datafusion::datasource::datasource::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_plan::{source_as_provider, LogicalPlan, TableScan};
@@ -84,6 +86,7 @@ impl BallistaContext {
         host: &str,
         port: u16,
         config: &BallistaConfig,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> ballista_core::error::Result<Self> {
         let state = BallistaContextState::new(host.to_owned(), port, config);
 
@@ -126,6 +129,7 @@ impl BallistaContext {
                 scheduler_url,
                 remote_session_id,
                 state.config(),
+                table_factories,
             )
         };
 
@@ -139,13 +143,14 @@ impl BallistaContext {
     pub async fn standalone(
         config: &BallistaConfig,
         concurrent_tasks: usize,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> ballista_core::error::Result<Self> {
         use ballista_core::serde::protobuf::PhysicalPlanNode;
         use ballista_core::serde::BallistaCodec;
 
         log::info!("Running in local mode. Scheduler will be run in-proc");
 
-        let addr = ballista_scheduler::standalone::new_standalone_scheduler().await?;
+        let addr = new_standalone_scheduler(table_factories.clone()).await?;
         let scheduler_url = format!("http://localhost:{}", addr.port());
         let mut scheduler = loop {
             match SchedulerGrpcClient::connect(scheduler_url.clone()).await {
@@ -185,6 +190,7 @@ impl BallistaContext {
                 scheduler_url,
                 remote_session_id,
                 config,
+                table_factories.clone(),
             )
         };
 
@@ -195,6 +201,7 @@ impl BallistaContext {
             scheduler,
             concurrent_tasks,
             default_codec,
+            table_factories,
         )
         .await?;
 
@@ -422,10 +429,11 @@ impl BallistaContext {
                         }
                         file_type => {
                             let ctx = self.context.lock();
+                            let state = ctx.state.read();
                             let factory =
-                                ctx.table_factories.get(file_type).ok_or_else(|| {
+                                state.runtime_env.table_factories.get(file_type).ok_or_else(|| {
                                     DataFusionError::Execution(format!(
-                                        "Unable to find factory for {}",
+                                        "Ballista unable to find factory for {}",
                                         file_type
                                     ))
                                 })?;
@@ -454,24 +462,19 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
     use datafusion::arrow;
     use datafusion::arrow::array::Int32Array;
-    use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
     use datafusion::datasource::custom::CustomTable;
     use datafusion::datasource::datasource::TableProviderFactory;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
-    use datafusion::datasource::{MemTable, TableProvider, TableType};
-    use datafusion::execution::context::SessionState;
-    use datafusion::logical_expr::Expr;
-    use datafusion::physical_plan::DisplayFormatType::Default;
-    use datafusion::physical_plan::ExecutionPlan;
-    use std::any::Any;
+    use datafusion::datasource::{MemTable, TableProvider};
     use std::collections::HashMap;
     use std::sync::Arc;
+    use datafusion::prelude::Partitioning::Hash;
 
     struct TestTableFactory {}
 
@@ -507,7 +510,7 @@ mod tests {
     #[cfg(feature = "standalone")]
     async fn test_standalone_mode() {
         use super::*;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, HashMap::default())
             .await
             .unwrap();
         let df = context.sql("SELECT 1;").await.unwrap();
@@ -518,13 +521,14 @@ mod tests {
     #[cfg(feature = "standalone")]
     async fn test_register_table_factory() {
         use super::*;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+
+        let factory: Arc<(dyn TableProviderFactory + 'static)> = Arc::new(TestTableFactory {});
+        let factories = HashMap::from([
+            ("DELTATABLE".to_string(), factory)
+        ]);
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, factories)
             .await
             .unwrap();
-        context
-            .context
-            .lock()
-            .register_table_factory("DELTATABLE", Arc::new(TestTableFactory {}));
 
         let sql = "CREATE EXTERNAL TABLE dt STORED AS DELTATABLE LOCATION 's3://bucket/schema/table';";
         context.sql(sql).await.unwrap();
@@ -552,7 +556,8 @@ mod tests {
         use std::fs::File;
         use std::io::Write;
         use tempfile::TempDir;
-        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1)
+
+        let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, HashMap::default())
             .await
             .unwrap();
 
@@ -602,7 +607,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -654,7 +659,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         context
             .register_parquet(
@@ -723,7 +728,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         let sql = "select EXTRACT(year FROM to_timestamp('2020-09-08T12:13:14+00:00'));";
 
@@ -743,7 +748,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         let df = context
             .sql("SELECT 1 as NUMBER union SELECT 1 as NUMBER;")
@@ -803,7 +808,7 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let context = BallistaContext::standalone(&config, 1, HashMap::default()).await.unwrap();
 
         context
             .register_parquet(

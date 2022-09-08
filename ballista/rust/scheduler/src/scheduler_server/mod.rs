@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +24,7 @@ use ballista_core::error::Result;
 use ballista_core::event_loop::EventLoop;
 use ballista_core::serde::protobuf::TaskStatus;
 use ballista_core::serde::{AsExecutionPlan, BallistaCodec};
+use datafusion::datasource::datasource::TableProviderFactory;
 use datafusion::execution::context::{default_session_builder, SessionState};
 use datafusion::logical_plan::LogicalPlan;
 use datafusion::prelude::{SessionConfig, SessionContext};
@@ -61,6 +63,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
         scheduler_name: String,
         config: Arc<dyn StateBackendClient>,
         codec: BallistaCodec<T, U>,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> Self {
         SchedulerServer::new_with_policy(
             scheduler_name,
@@ -68,6 +71,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
             TaskSchedulingPolicy::PullStaged,
             codec,
             default_session_builder,
+            table_factories,
         )
     }
 
@@ -76,6 +80,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
         config: Arc<dyn StateBackendClient>,
         codec: BallistaCodec<T, U>,
         session_builder: SessionBuilder,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> Self {
         SchedulerServer::new_with_policy(
             scheduler_name,
@@ -83,6 +88,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
             TaskSchedulingPolicy::PullStaged,
             codec,
             session_builder,
+            table_factories,
         )
     }
 
@@ -92,12 +98,14 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
         policy: TaskSchedulingPolicy,
         codec: BallistaCodec<T, U>,
         session_builder: SessionBuilder,
+        table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
     ) -> Self {
         let state = Arc::new(SchedulerState::new(
             config,
             session_builder,
             codec,
             scheduler_name.clone(),
+            table_factories,
         ));
 
         SchedulerServer::new_with_state(scheduler_name, policy, state)
