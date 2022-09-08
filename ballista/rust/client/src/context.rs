@@ -26,6 +26,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ballista_core::config::BallistaConfig;
+use ballista_core::error::BallistaError;
 use ballista_core::serde::protobuf::scheduler_grpc_client::SchedulerGrpcClient;
 use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair};
 use ballista_core::utils::{
@@ -261,7 +262,7 @@ impl BallistaContext {
     ) -> Result<Arc<DataFrame>> {
         // convert to absolute path because the executor likely has a different working directory
         let path = PathBuf::from(path);
-        let path = fs::canonicalize(&path)?;
+        let path = fs::canonicalize(&path).map_err(|e| DataFusionError::Internal(format!("Error reading {:?}: {}", path, e)))?;
 
         let ctx = self.context.clone();
         let df = ctx.lock().read_csv(path.to_str().unwrap(), options).await?;
@@ -437,8 +438,12 @@ impl BallistaContext {
                                         file_type
                                     ))
                                 })?;
-                            let table = (*factory)
-                                .create(cmd.file_type.as_str(), cmd.location.as_str());
+                            let table = (*factory).create(
+                                &state,
+                                cmd.file_type.as_str(),
+                                cmd.location.as_str(),
+                                HashMap::new(), // TODO: parse options from SQL
+                            ).await?;
                             self.register_table(cmd.name.as_str(), table.clone())?;
 
                             let df = ctx.read_table(table)?;
@@ -464,7 +469,7 @@ impl BallistaContext {
 mod tests {
     use datafusion::arrow;
     use datafusion::arrow::array::Int32Array;
-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
     use datafusion::datasource::custom::CustomTable;
@@ -474,35 +479,54 @@ mod tests {
     use datafusion::datasource::{MemTable, TableProvider};
     use std::collections::HashMap;
     use std::sync::Arc;
+    use datafusion::datasource::listing::{ListingTable, ListingTableConfig};
+    use datafusion::prelude::ParquetReadOptions;
     use datafusion::prelude::Partitioning::Hash;
+    use datafusion::error::{DataFusionError, Result};
+    use datafusion::execution::context::SessionState;
+    use async_trait::async_trait;
 
     struct TestTableFactory {}
 
+    #[async_trait]
     impl TableProviderFactory for TestTableFactory {
-        fn create(&self, table_type: &str, path: &str) -> Arc<dyn TableProvider> {
-            let schema = Arc::new(Schema::new(vec![
-                Field::new("c1", DataType::Int32, true),
-                Field::new("c2", DataType::Int32, true),
-            ]));
+        async fn create(
+            &self,
+            ctx: &SessionState,
+            table_type: &str,
+            url: &str,
+            options: HashMap<String, String>,
+        ) -> Result<Arc<dyn TableProvider>> {
+            let table_path = ListingTableUrl::parse(url)?;
+            let partition_count = 1; // TODO: partitions
+            let listing_options = ParquetReadOptions::default().to_listing_options(partition_count);
 
-            let data = RecordBatch::try_new(
-                schema.clone(),
-                vec![
-                    Arc::new(Int32Array::from(vec![Some(0), None, Some(1), None, None])),
-                    Arc::new(Int32Array::from(vec![
-                        Some(1),
-                        Some(1),
-                        Some(0),
-                        Some(1),
-                        None,
-                    ])),
-                ],
-            )
-            .unwrap(); // TODO: Make TableProviderFactory return a result
+            // with parquet we resolve the schema in all cases
+            let resolved_schema = listing_options
+                .infer_schema(&ctx, &table_path)
+                .await?;
+            self.with_schema(ctx, resolved_schema, table_type, url, options)
+        }
 
-            let provider = Arc::new(MemTable::try_new(schema, vec![vec![data]]).unwrap());
-            let table = CustomTable::new(table_type, path, HashMap::default(), provider);
-            Arc::new(table)
+        fn with_schema(
+            &self,
+            ctx: &SessionState,
+            schema: SchemaRef,
+            table_type: &str,
+            url: &str,
+            options: HashMap<String, String>,
+        ) -> Result<Arc<dyn TableProvider>> {
+            let table_path = ListingTableUrl::parse(url)?;
+            let partition_count = 1; // TODO: partitions
+            let listing_options = ParquetReadOptions::default().to_listing_options(partition_count);
+            let config = ListingTableConfig::new(table_path)
+                .with_listing_options(listing_options)
+                .with_schema(schema);
+
+            let provider = Arc::new(ListingTable::try_new(config)?);
+
+            let table = CustomTable::new(table_type, url, HashMap::default(), provider);
+            Ok(Arc::new(table))
         }
     }
 
@@ -530,7 +554,11 @@ mod tests {
             .await
             .unwrap();
 
-        let sql = "CREATE EXTERNAL TABLE dt STORED AS DELTATABLE LOCATION 's3://bucket/schema/table';";
+        let sql = r#"
+            CREATE EXTERNAL TABLE dt
+            STORED AS DELTATABLE
+            LOCATION 'testdata/single_nan.parquet';
+            "#;
         context.sql(sql).await.unwrap();
 
         let exists = context.state.lock().tables.contains_key("dt");
@@ -540,11 +568,11 @@ mod tests {
         let df = context.sql("select * from dt").await.unwrap();
         let res = df.collect().await.unwrap();
         let expected = vec![
-            "+--------------+",
-            "| MIN(test.id) |",
-            "+--------------+",
-            "| 0            |",
-            "+--------------+",
+            "+-------+",
+            "| mycol |",
+            "+-------+",
+            "|       |",
+            "+-------+"
         ];
         assert_result_eq(expected, &*res);
     }
