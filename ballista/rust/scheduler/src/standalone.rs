@@ -31,9 +31,6 @@ use std::{net::SocketAddr, sync::Arc};
 use std::collections::HashMap;
 use tokio::net::TcpListener;
 use datafusion::datasource::datasource::TableProviderFactory;
-use datafusion::execution::context::SessionState;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
-use datafusion::prelude::SessionConfig;
 
 pub async fn new_standalone_scheduler(
     table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,

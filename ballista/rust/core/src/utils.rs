@@ -233,8 +233,6 @@ pub fn create_df_ctx_with_ballista_query_planner<T: 'static + AsLogicalPlan>(
     config: &BallistaConfig,
     table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,
 ) -> SessionContext {
-    use std::collections::HashMap;
-    
     let planner: Arc<BallistaQueryPlanner<T>> =
         Arc::new(BallistaQueryPlanner::new(scheduler_url, config.clone()));
 

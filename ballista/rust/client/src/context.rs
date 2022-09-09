@@ -26,7 +26,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ballista_core::config::BallistaConfig;
-use ballista_core::error::BallistaError;
 use ballista_core::serde::protobuf::scheduler_grpc_client::SchedulerGrpcClient;
 use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair};
 use ballista_core::utils::{
@@ -468,21 +467,18 @@ impl BallistaContext {
 #[cfg(test)]
 mod tests {
     use datafusion::arrow;
-    use datafusion::arrow::array::Int32Array;
-    use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-    use datafusion::arrow::record_batch::RecordBatch;
+    use datafusion::arrow::datatypes::{SchemaRef};
     use datafusion::arrow::util::pretty::pretty_format_batches;
     use datafusion::datasource::custom::CustomTable;
     use datafusion::datasource::datasource::TableProviderFactory;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
-    use datafusion::datasource::{MemTable, TableProvider};
+    use datafusion::datasource::{TableProvider};
     use std::collections::HashMap;
     use std::sync::Arc;
     use datafusion::datasource::listing::{ListingTable, ListingTableConfig};
     use datafusion::prelude::ParquetReadOptions;
-    use datafusion::prelude::Partitioning::Hash;
-    use datafusion::error::{DataFusionError, Result};
+    use datafusion::error::{Result};
     use datafusion::execution::context::SessionState;
     use async_trait::async_trait;
 
@@ -492,29 +488,25 @@ mod tests {
     impl TableProviderFactory for TestTableFactory {
         async fn create(
             &self,
-            ctx: &SessionState,
+            _ctx: &SessionState,
             table_type: &str,
             url: &str,
-            options: HashMap<String, String>,
+            _options: HashMap<String, String>,
         ) -> Result<Arc<dyn TableProvider>> {
-            let table_path = ListingTableUrl::parse(url)?;
-            let partition_count = 1; // TODO: partitions
-            let listing_options = ParquetReadOptions::default().to_listing_options(partition_count);
-
-            // with parquet we resolve the schema in all cases
-            let resolved_schema = listing_options
-                .infer_schema(&ctx, &table_path)
-                .await?;
-            self.with_schema(ctx, resolved_schema, table_type, url, options)
+            let provider = deltalake::open_table(url)
+                .await
+                .unwrap();
+            let table = CustomTable::new(table_type, url, HashMap::default(), Arc::new(provider));
+            Ok(Arc::new(table))
         }
 
         fn with_schema(
             &self,
-            ctx: &SessionState,
+            _ctx: &SessionState,
             schema: SchemaRef,
             table_type: &str,
             url: &str,
-            options: HashMap<String, String>,
+            _options: HashMap<String, String>,
         ) -> Result<Arc<dyn TableProvider>> {
             let table_path = ListingTableUrl::parse(url)?;
             let partition_count = 1; // TODO: partitions
@@ -557,7 +549,7 @@ mod tests {
         let sql = r#"
             CREATE EXTERNAL TABLE dt
             STORED AS DELTATABLE
-            LOCATION 'testdata/single_nan.parquet';
+            LOCATION '/home/bgardner/Downloads/delta-table';
             "#;
         context.sql(sql).await.unwrap();
 
@@ -568,11 +560,15 @@ mod tests {
         let df = context.sql("select * from dt").await.unwrap();
         let res = df.collect().await.unwrap();
         let expected = vec![
-            "+-------+",
-            "| mycol |",
-            "+-------+",
-            "|       |",
-            "+-------+"
+            "+----+",
+            "| id |",
+            "+----+",
+            "| 1  |",
+            "| 4  |",
+            "| 2  |",
+            "| 0  |",
+            "| 3  |",
+            "+----+"
         ];
         assert_result_eq(expected, &*res);
     }
