@@ -8,12 +8,18 @@ jobs:
     steps:
       - checkout
       - run: |
-          export DOCKER_TAG=$(git tag --points-at HEAD)
-          if [ -z "$DOCKER_TAG" ]
+          if [ $CIRCLE_BRANCH = "master" ]
           then
-            export DOCKER_TAG=$(echo $(git describe --tags --abbrev=0) | awk -F. -v OFS=. '{$2 += 1 ; print}')
-            git tag $DOCKER_TAG
-            git push origin --tags
+            export DOCKER_TAG=$(git tag --points-at HEAD)
+            if [ -z "$DOCKER_TAG" ]
+            then
+              export DOCKER_TAG=$(echo $(git describe --tags --abbrev=0) | awk -F. -v OFS=. '{$2 += 1 ; print}')
+              git tag $DOCKER_TAG
+              git push origin --tags
+            fi
+          else
+            export SHORT_HASH=$(git rev-parse --short HEAD)
+            export DOCKER_TAG="$CIRCLE_BRANCH-$SHORT_HASH"  
           fi
           echo $DOCKER_TAG > /root/project/docker-tag.txt
           apt-get update
@@ -66,11 +72,19 @@ jobs:
           cd /root/project/helm/ballista     
           az login --username=$AZ_USER --password=$AZ_PASS
           az aks get-credentials --resource-group DATA-WAREHOUSE-TEST --name DATA-WAREHOUSE-TEST-CLUSTER --admin
-          kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm upgrade --install ballista . --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
-          kubectl rollout status --watch --timeout=2m statefulSet ballista-scheduler
-          kubectl rollout status --watch --timeout=2m statefulSet ballista-executor
+          if [ $CIRCLE_BRANCH = "master" ]
+          then
+            export NAMESPACE="default"
+          else
+            export NAMESPACE=$(echo "$CIRCLE_BRANCH" | sed -r 's/[_]+/-/g')
+          fi
+          kubectl create namespace $NAMESPACE || true
+          kubectl config set-context --current --namespace=$NAMESPACE
+          kubectl create secret docker-registry regcred --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker --docker-username=$ARTIFACTORY_USER --docker-password=$ARTIFACTORY_API_KEY --docker-email=$ARTIFACTORY_EMAIL || true
+          helm upgrade --install ballista . --namespace $NAMESPACE --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
+          kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
 
 workflows:
   main_workflow:
