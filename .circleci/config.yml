@@ -142,7 +142,7 @@ jobs:
           done          
           mc alias set myminio http://127.0.0.1:9000 minio minio123
           cd /root/project/data
-          mc mb myminio/tpch
+          mc mb --ignore-existing myminio/tpch
           mc cp *.tbl myminio/tpch
           mc ls myminio/tpch
 
