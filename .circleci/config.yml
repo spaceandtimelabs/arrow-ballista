@@ -8,6 +8,8 @@ jobs:
     steps:
       - checkout
       - run: |
+          apt-get update
+          apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm git
           if [ $CIRCLE_BRANCH = "master" ]
           then
             export DOCKER_TAG=$(git tag --points-at HEAD)
@@ -22,8 +24,6 @@ jobs:
             export DOCKER_TAG="$CIRCLE_BRANCH-$SHORT_HASH"  
           fi
           echo $DOCKER_TAG > /root/project/docker-tag.txt
-          apt-get update
-          apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm git
           npm install -g yarn
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           export PATH=/root/.cargo/bin
