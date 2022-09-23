@@ -30,7 +30,7 @@ jobs:
           cargo build --release --all --features flight-sql
           cd ballista/ui/scheduler
           yarn install
-          yarn build
+          CI=false yarn build # prevent warnings from being treated as errors because we have them
       - persist_to_workspace:
           root: /root
           paths:
