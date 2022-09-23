@@ -4,7 +4,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: rust:1.62.1-buster
+      - image: ubuntu:22.04
     steps:
       - checkout
       - run: |
@@ -25,7 +25,8 @@ jobs:
           apt-get update
           apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm
           npm install -g yarn
-          protoc --version
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          export PATH=/root/.cargo/bin
           cargo build --release --all --features flight-sql
           cd ballista/ui/scheduler
           yarn install
