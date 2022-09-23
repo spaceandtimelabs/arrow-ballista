@@ -10,7 +10,6 @@ jobs:
       - run: |
           apt-get update
           apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm git build-essential
-          cc --version
           if [ $CIRCLE_BRANCH = "master" ]
           then
             export DOCKER_TAG=$(git tag --points-at HEAD)
@@ -27,7 +26,7 @@ jobs:
           echo $DOCKER_TAG > /root/project/docker-tag.txt
           npm install -g yarn
           curl https://sh.rustup.rs -sSf | sh -s -- -y
-          export PATH=/root/.cargo/bin
+          export PATH=/root/.cargo/bin:$PATH
           cargo build --release --all --features flight-sql
           cd ballista/ui/scheduler
           yarn install
