@@ -108,7 +108,8 @@ jobs:
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm dep update --namespace $NAMESPACE 
           helm dep build --namespace $NAMESPACE 
-          helm upgrade --install ballista . --namespace $NAMESPACE --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          helm uninstall ballista # some actions require a complete uninstall and reinstall
+          helm install ballista . --namespace $NAMESPACE --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
           kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
           kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
 
