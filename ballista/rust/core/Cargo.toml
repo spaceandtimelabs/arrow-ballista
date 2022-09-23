@@ -39,8 +39,8 @@ arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "5a55406c
 async-trait = "0.1.41"
 chrono = { version = "0.4", default-features = false }
 clap = { version = "3", features = ["derive", "cargo"] }
-datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "b813b47af8ba2e8a324b34970a5e334cb600eda0" }
-datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "b813b47af8ba2e8a324b34970a5e334cb600eda0" }
+datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "9985b3b5d1e36ba2e8a34b212c8fde9014305866" }
+datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "9985b3b5d1e36ba2e8a34b212c8fde9014305866" }
 futures = "0.3"
 hashbrown = "0.12"
 
