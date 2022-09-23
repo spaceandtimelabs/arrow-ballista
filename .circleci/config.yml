@@ -10,6 +10,7 @@ jobs:
       - run: |
           apt-get update
           apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm git build-essential
+          cc --version
           if [ $CIRCLE_BRANCH = "master" ]
           then
             export DOCKER_TAG=$(git tag --points-at HEAD)
