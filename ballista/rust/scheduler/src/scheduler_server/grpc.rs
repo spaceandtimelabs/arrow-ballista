@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::convert::TryInto;
 use ballista_core::config::{BallistaConfig, TaskSchedulingPolicy};
 use ballista_core::serde::protobuf::execute_query_params::{OptionalSessionId, Query};
+use std::convert::TryInto;
 
 use ballista_core::serde::protobuf::executor_registration::OptionalHost;
 use ballista_core::serde::protobuf::scheduler_grpc_server::SchedulerGrpc;

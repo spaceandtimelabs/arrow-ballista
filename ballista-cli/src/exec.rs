@@ -23,7 +23,7 @@ use crate::{
     helper::CliHelper,
     print_options::PrintOptions,
 };
-use datafusion::error::Result;
+use datafusion::error::{DataFusionError, Result};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::fs::File;
@@ -88,8 +88,12 @@ pub async fn exec_from_files(
 }
 
 /// run and execute SQL statements and commands against a context with the given print options
-pub async fn exec_from_repl(ctx: &mut Context, print_options: &mut PrintOptions) {
-    let mut rl = Editor::<CliHelper>::new();
+pub async fn exec_from_repl(
+    ctx: &mut Context,
+    print_options: &mut PrintOptions,
+) -> Result<()> {
+    let mut rl =
+        Editor::<CliHelper>::new().map_err(|e| DataFusionError::External(Box::new(e)))?;
     rl.set_helper(Some(CliHelper::default()));
     rl.load_history(".history").ok();
 
@@ -154,6 +158,7 @@ pub async fn exec_from_repl(ctx: &mut Context, print_options: &mut PrintOptions)
     }
 
     rl.save_history(".history").ok();
+    Ok(())
 }
 
 async fn exec_and_print(

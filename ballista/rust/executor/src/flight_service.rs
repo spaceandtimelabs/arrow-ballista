@@ -44,8 +44,8 @@ use tokio::{
     task,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status, Streaming};
 use tonic::metadata::MetadataValue;
+use tonic::{Request, Response, Status, Streaming};
 
 type FlightDataSender = Sender<Result<FlightData, Status>>;
 type FlightDataReceiver = Receiver<Result<FlightData, Status>>;
@@ -79,7 +79,7 @@ impl FlightService for BallistaFlightService {
     type ListActionsStream = BoxedFlightStream<ActionType>;
     type ListFlightsStream = BoxedFlightStream<FlightInfo>;
 
-    async fn do_get( // TODO: copy this
+    async fn do_get(
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
@@ -146,8 +146,10 @@ impl FlightService for BallistaFlightService {
         };
         let result = Ok(result);
         let output = futures::stream::iter(vec![result]);
-        let str = format!("Bearer {}", token.to_string());
-        let mut resp: Response<Pin<Box<dyn Stream<Item = Result<_, Status>> + Sync + Send>>> = Response::new(Box::pin(output));
+        let str = format!("Bearer {}", token);
+        let mut resp: Response<
+            Pin<Box<dyn Stream<Item = Result<_, Status>> + Sync + Send>>,
+        > = Response::new(Box::pin(output));
         let md = MetadataValue::try_from(str)
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
         resp.metadata_mut().insert("authorization", md);
@@ -217,7 +219,7 @@ fn create_flight_iter(
     )
 }
 
-async fn stream_flight_data<T>( // TODO: copy this
+async fn stream_flight_data<T>(
     reader: FileReader<T>,
     tx: FlightDataSender,
 ) -> Result<(), Status>

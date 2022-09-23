@@ -38,7 +38,7 @@ fn main() -> Result<(), String> {
         .create(true)
         .open("src/serde/generated/ballista.rs")
         .unwrap();
-    file.write(code.as_str().as_ref()).unwrap();
+    file.write_all(code.as_str().as_ref()).unwrap();
 
     Ok(())
 }
