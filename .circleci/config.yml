@@ -52,8 +52,8 @@ jobs:
           at: /root
       - run: |
           export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
-          docker build -f scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
-          docker build -f executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
+          docker build -f dev/docker/ballista-scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
+          docker build -f dev/docker/ballista-executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
           docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
           docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
           docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
