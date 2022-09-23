@@ -23,16 +23,13 @@ jobs:
           fi
           echo $DOCKER_TAG > /root/project/docker-tag.txt
           apt-get update
-          apt-get install -y cmake
-          mkdir -p $HOME/d/protoc
-          cd $HOME/d/protoc
-          export PROTO_ZIP="protoc-21.4-linux-x86_64.zip"
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v21.4/$PROTO_ZIP
-          unzip $PROTO_ZIP
-          export PATH=$PATH:$HOME/d/protoc/bin
+          apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm
+          npm install -g yarn
           protoc --version
-          cd -
           cargo build --release --all --features flight-sql
+          cd ballista/ui/scheduler
+          yarn install
+          yarn build
       - persist_to_workspace:
           root: /root
           paths:
