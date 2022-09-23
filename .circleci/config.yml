@@ -40,8 +40,8 @@ jobs:
             - project/helm
             - project/target/release/ballista-scheduler
             - project/target/release/ballista-executor
-            - project/scheduler.Dockerfile
-            - project/executor.Dockerfile
+            - project/dev/docker/ballista-scheduler.Dockerfile
+            - project/dev/docker/ballista-executor.Dockerfile
 
   deploy_docker:
     docker:
