@@ -394,22 +394,12 @@ impl BallistaContext {
 
         let plan = ctx.create_logical_plan(sql)?;
 
-        match plan {
-            LogicalPlan::CreateExternalTable(CreateExternalTable {
-                ref schema,
-                ref name,
-                ref location,
-                ref file_type,
-                ref has_header,
-                ref delimiter,
-                ref table_partition_cols,
-                ref if_not_exists,
-                ..
-            }) => {
-                let table_exists = ctx.table_exist(name.as_str())?;
+        match plan.clone() {
+            LogicalPlan::CreateExternalTable(cmd) => {
+                let table_exists = ctx.table_exist(cmd.name.as_str())?;
 
-                match (if_not_exists, table_exists) {
-                    (_, false) => match file_type.to_lowercase().as_str() {
+                match (cmd.if_not_exists, table_exists) {
+                    (_, false) => match cmd.file_type.to_lowercase().as_str() {
                         "csv" => {
                             self.register_csv(
                                 cmd.name.as_str(),
