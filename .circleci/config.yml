@@ -2,14 +2,12 @@
 version: 2.1
 
 jobs:
-  build:
+  tag:
     docker:
-      - image: ubuntu:22.04
+      - image: alpine/git
     steps:
       - checkout
       - run: |
-          apt-get update
-          apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip nodejs npm git build-essential
           if [ $CIRCLE_BRANCH = "master" ]
           then
             export DOCKER_TAG=$(git tag --points-at HEAD)
@@ -24,22 +22,48 @@ jobs:
             export DOCKER_TAG="$CIRCLE_BRANCH-$SHORT_HASH"  
           fi
           echo $DOCKER_TAG > /root/project/docker-tag.txt
-          npm install -g yarn
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - project/docker-tag.txt
+
+  build_rust:
+    docker:
+      - image: ubuntu:22.04
+    steps:
+      - checkout
+      - run: |
+          apt-get update
+          apt-get -y install libssl-dev openssl zlib1g zlib1g-dev libpq-dev cmake protobuf-compiler netcat curl unzip git build-essential
+          export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           export PATH=/root/.cargo/bin:$PATH
           cargo build --release --all --features flight-sql
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - project/helm
+            - project/target/release/ballista-scheduler
+            - project/target/release/ballista-executor
+            - project/dev/docker/
+
+  build_react:
+    docker:
+      - image: ubuntu:22.04
+    steps:
+      - checkout
+      - run: |
+          apt-get update
+          apt-get -y install nodejs npm
+          export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
+          npm install -g yarn
           cd ballista/ui/scheduler
           yarn install
           CI=false yarn build # prevent warnings from being treated as errors because we have them
       - persist_to_workspace:
           root: /root
           paths:
-            - project/docker-tag.txt
-            - project/helm
-            - project/target/release/ballista-scheduler
-            - project/target/release/ballista-executor
             - project/ballista/ui/scheduler/build
-            - project/dev/docker/
 
   deploy_docker:
     docker:
@@ -148,15 +172,22 @@ jobs:
 workflows:
   main_workflow:
     jobs:
-      - build
+      - tag
+      - build_rust:
+          requires:
+            - tag
+      - build_react:
+          requires:
+            - tag
       - generate_data
       - deploy_docker:
           requires:
-            - build
+            - build_rust
+            - build_react
       - deploy_helm:
           requires:
             - deploy_docker
-            - generate_data
       - seed_data:
           requires:
+            - generate_data
             - deploy_helm
