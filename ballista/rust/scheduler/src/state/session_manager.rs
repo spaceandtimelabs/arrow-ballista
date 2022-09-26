@@ -27,6 +27,7 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::common::ScalarValue;
 use log::warn;
 use std::sync::Arc;
+use tracing::instrument::WithSubscriber;
 use datafusion::datasource::datasource::TableProviderFactory;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -131,9 +132,25 @@ pub fn create_datafusion_context(
         .with_repartition_windows(ballista_config.repartition_windows())
         .with_parquet_pruning(ballista_config.parquet_pruning());
     let config = propagate_ballista_configs(config, ballista_config);
-    // TODO: copy over table_factories
 
-    let session_state = session_builder(config);
+    let state = session_builder(config);
+    let session_state = SessionState {
+        session_id: state.session_id,
+        optimizer: state.optimizer,
+        physical_optimizers: state.physical_optimizers,
+        query_planner: state.query_planner,
+        catalog_list: state.catalog_list,
+        scalar_functions: state.scalar_functions,
+        aggregate_functions: state.aggregate_functions,
+        config: state.config,
+        execution_props: state.execution_props,
+        runtime_env: Arc::new( RuntimeEnv {
+            memory_manager: state.runtime_env.memory_manager.clone(),
+            disk_manager: state.runtime_env.disk_manager.clone(),
+            object_store_registry: state.runtime_env.object_store_registry.clone(),
+            table_factories
+        } )
+    };
     Arc::new(SessionContext::with_state(session_state))
 }
 

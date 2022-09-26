@@ -510,7 +510,7 @@ mod tests {
 
         let factory: Arc<(dyn TableProviderFactory + 'static)> = Arc::new(DeltaTableFactory {});
         let factories = HashMap::from([
-            ("DELTATABLE".to_string(), factory)
+            ("deltatable".to_string(), factory)
         ]);
         let context = BallistaContext::standalone(&BallistaConfig::new().unwrap(), 1, factories)
             .await
