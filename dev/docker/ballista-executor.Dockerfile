@@ -25,6 +25,9 @@ ENV RUST_BACKTRACE=full
 
 COPY target/$RELEASE_FLAG/ballista-executor /root/ballista-executor
 
+# TODO: remove hack for demo
+COPY examples/testdata/aggregate_test_100.csv /root/aggregate_test_100.csv
+
 # Expose Ballista Executor gRPC port
 EXPOSE 50051
 

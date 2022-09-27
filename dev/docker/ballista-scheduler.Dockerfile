@@ -28,6 +28,9 @@ COPY target/$RELEASE_FLAG/ballista-scheduler /root/ballista-scheduler
 COPY ballista/ui/scheduler/build /var/www/html
 COPY dev/docker/nginx.conf /etc/nginx/sites-enabled/default
 
+# TODO: remove hack for demo
+COPY examples/testdata/aggregate_test_100.csv /root/aggregate_test_100.csv
+
 # Expose Ballista Scheduler web UI port
 EXPOSE 80
 

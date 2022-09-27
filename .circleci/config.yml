@@ -46,6 +46,7 @@ jobs:
             - project/target/release/ballista-scheduler
             - project/target/release/ballista-executor
             - project/dev/docker/
+            - project/examples/testdata/aggregate_test_100.csv # TODO: remove hack for demo
 
   build_react:
     docker:
