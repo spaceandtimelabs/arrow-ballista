@@ -154,7 +154,6 @@ pub async fn exec_from_repl(ctx: &mut Context, print_options: &mut PrintOptions)
     }
 
     rl.save_history(".history").ok();
-    Ok(())
 }
 
 async fn exec_and_print(
