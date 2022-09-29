@@ -156,7 +156,6 @@ pub async fn exec_from_repl(ctx: &BallistaContext, print_options: &mut PrintOpti
     }
 
     rl.save_history(".history").ok();
-    Ok(())
 }
 
 async fn exec_and_print(
