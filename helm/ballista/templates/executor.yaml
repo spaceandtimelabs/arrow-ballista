@@ -39,7 +39,7 @@ spec:
             - name: AWS_DEFAULT_REGION
               value: fake_region
             - name: AWS_ENDPOINT
-              value: http://minio:9000
+              value: http://ballista-minio:9000
             - name: AWS_ALLOW_HTTP
               value: "true"
             - name: AWS_ACCESS_KEY_ID
