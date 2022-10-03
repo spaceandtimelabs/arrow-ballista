@@ -135,7 +135,7 @@ jobs:
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm dep update --namespace $NAMESPACE 
           helm dep build --namespace $NAMESPACE 
-          helm uninstall ballista | true # some actions require a complete uninstall and reinstall
+          helm uninstall ballista || true # some actions require a complete uninstall and reinstall
           helm install ballista . --namespace $NAMESPACE --debug \
             --set image.scheduler=ballista-scheduler \
             --set image.executor=ballista-executor \
