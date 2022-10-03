@@ -93,7 +93,12 @@ jobs:
           mkdir data
           cd data
           docker run -it -v "$(pwd)":/data ghcr.io/databloom-ai/tpch-docker:main -v -s 0.1
+          pwd
+          ls -la
+          head customer.tbl
           echo -e "c_custkey|c_name|c_address|c_nationkey|c_phone|c_acctbal|c_mktsegment|c_comment|junk\n$(cat customer.tbl)" > customer.csv
+          ls -la
+          head customer.csv
           echo -e "l_orderkey|l_partkey|l_suppkey|l_linenumber|l_quantity|l_extendedprice|l_discount|l_tax|l_returnflag|l_linestatus|l_shipdate|l_commitdate|l_receiptdate|l_shipinstruct|l_shipmode|l_comment|junk\n$(cat lineitem.tbl)" > lineitem.csv
           echo -e "n_nationkey|n_name|n_regionkey|n_comment|junk\n$(cat nation.tbl)" > nation.csv
           echo -e "o_orderkey|o_custkey|o_orderstatus|o_totalprice|o_orderdate|o_orderpriority|o_clerk|o_shippriority|o_comment|junk\n$(cat orders.tbl)" > orders.csv
