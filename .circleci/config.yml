@@ -147,9 +147,8 @@ jobs:
   convert_data:
     docker:
       - image: apache/spark
-#    working_directory: /opt/spark/work-dir
+    working_directory: /opt/spark/work-dir
     steps:
-      - setup_remote_docker
       - attach_workspace:
           at: /opt/spark/work-dir
       - run: |
