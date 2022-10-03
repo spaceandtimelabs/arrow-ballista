@@ -90,9 +90,9 @@ jobs:
           at: /root
       - run: |
           echo "generating data..."
-          mkdir data
-          cd data
-          docker run -it -v "$(pwd)":/data ghcr.io/databloom-ai/tpch-docker:main -v -s 0.1
+          mkdir -p /root/project/data
+          cd /root/project/data
+          docker run -v /root/project/data:/data ghcr.io/databloom-ai/tpch-docker:main -v -s 0.1
           pwd
           ls -la
           head customer.tbl
