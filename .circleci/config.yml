@@ -88,7 +88,7 @@ jobs:
       - setup_remote_docker
       - run: |
           echo "generating data..."
-          /opt/tpch/2.18.0_rc2/dbgen -v -s 0.1
+          /opt/tpch/2.18.0_rc2/dbgen/dbgen -v -s 0.1
           echo -e "c_custkey|c_name|c_address|c_nationkey|c_phone|c_acctbal|c_mktsegment|c_comment|junk\n$(cat customer.tbl)" > customer.csv
           echo -e "l_orderkey|l_partkey|l_suppkey|l_linenumber|l_quantity|l_extendedprice|l_discount|l_tax|l_returnflag|l_linestatus|l_shipdate|l_commitdate|l_receiptdate|l_shipinstruct|l_shipmode|l_comment|junk\n$(cat lineitem.tbl)" > lineitem.csv
           echo -e "n_nationkey|n_name|n_regionkey|n_comment|junk\n$(cat nation.tbl)" > nation.csv
