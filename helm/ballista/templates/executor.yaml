@@ -41,7 +41,7 @@ spec:
             - name: AWS_ENDPOINT
               value: {{.Values.config.s3.endpoint}}
             - name: AWS_ALLOW_HTTP
-              value: {{.Values.config.s3.allowHttp}}
+              value: "{{.Values.config.s3.allowHttp}}"
             - name: AWS_ACCESS_KEY_ID
               value: {{.Values.minio.auth.rootUser}}
             - name: AWS_SECRET_ACCESS_KEY
