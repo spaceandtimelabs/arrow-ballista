@@ -108,24 +108,6 @@ jobs:
           paths:
             - project/data
 
-  convert_data:
-    docker:
-      - image: apache/spark
-    working_directory: /opt/spark/work-dir
-    steps:
-      - setup_remote_docker
-      - attach_workspace:
-          at: /opt/spark/work-dir
-      - run: |
-          pwd
-          ls -la
-          echo 'import java.io.File' >> run.scala
-          echo 'val path = "/opt/spark/work-dir"' >> run.scala
-          echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
-          echo 'var dfs = new File(path).listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
-          echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/$n.parquet")}' >> run.scala
-          echo 'System.exit(0)' >> run.scala
-
   deploy_helm:
     docker:
       - image: mcr.microsoft.com/azure-cli
@@ -162,6 +144,24 @@ jobs:
             --set minio.auth.rootPassword="$MINIO_PASSWORD"
           kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
           kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
+
+  convert_data:
+    docker:
+      - image: apache/spark
+    working_directory: /opt/spark/work-dir
+    steps:
+      - setup_remote_docker
+      - attach_workspace:
+          at: /opt/spark/work-dir
+      - run: |
+          pwd
+          ls -la
+          echo 'import java.io.File' >> run.scala
+          echo 'val path = "/opt/spark/work-dir"' >> run.scala
+          echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
+          echo 'var dfs = new File(path).listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
+          echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/$n.parquet")}' >> run.scala
+          echo 'System.exit(0)' >> run.scala
 
   seed_data:
     docker:
