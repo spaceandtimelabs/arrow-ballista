@@ -136,7 +136,12 @@ jobs:
           helm dep update --namespace $NAMESPACE 
           helm dep build --namespace $NAMESPACE 
           helm uninstall ballista # some actions require a complete uninstall and reinstall
-          helm install ballista . --namespace $NAMESPACE --debug --set image.scheduler=ballista-scheduler --set image.executor=ballista-executor --set image.tag=$DOCKER_TAG --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker
+          helm install ballista . --namespace $NAMESPACE --debug \
+            --set image.scheduler=ballista-scheduler \
+            --set image.executor=ballista-executor \
+            --set image.tag=$DOCKER_TAG \
+            --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker \
+            --set minio.auth.rootPassword=$MINIO_PASSWORD
           kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
           kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
 

@@ -36,15 +36,15 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: AWS_DEFAULT_REGION
-              value: fake_region
+              value: {{.Values.config.s3.region}}
             - name: AWS_ENDPOINT
-              value: http://ballista-minio:9000
+              value: {{.Values.config.s3.endpoint}}
             - name: AWS_ALLOW_HTTP
-              value: "true"
+              value: {{.Values.config.s3.allowHttp}}
             - name: AWS_ACCESS_KEY_ID
-              value: minio
+              value: {{.Values.minio.auth.rootUser}}
             - name: AWS_SECRET_ACCESS_KEY
-              value: minio123
+              value: {{.Values.minio.auth.rootPassword}}
           ports:
             - name: flightsql
               containerPort: 50050

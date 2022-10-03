@@ -12,6 +12,12 @@ image:
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
 
+config:
+  s3:
+    allowHttp: "true"
+    region: "minio"
+    endpoint: "http://ballista-minio:9000"
+
 imagePullSecrets:
   - name: regcred
 nameOverride: ""
@@ -91,4 +97,3 @@ affinity: {}
 minio:
   auth:
     rootUser: minio
-    rootPassword: minio123
