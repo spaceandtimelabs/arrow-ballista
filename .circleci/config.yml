@@ -108,6 +108,15 @@ jobs:
           paths:
             - project/data
 
+  convert_data:
+    docker:
+      - image: apache/spark
+    steps:
+      - setup_remote_docker
+      - run: |
+          pwd
+          ls -la
+
   deploy_helm:
     docker:
       - image: mcr.microsoft.com/azure-cli
@@ -188,6 +197,9 @@ workflows:
           requires:
             - tag
       - generate_data
+      - convert_data:
+        requires:
+          - generate_data
       - deploy_docker:
           requires:
             - build_rust
@@ -197,5 +209,5 @@ workflows:
             - deploy_docker
       - seed_data:
           requires:
-            - generate_data
+            - convert_data
             - deploy_helm

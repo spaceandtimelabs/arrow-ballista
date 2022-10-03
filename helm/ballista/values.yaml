@@ -14,7 +14,7 @@ image:
 
 config:
   s3:
-    allowHttp: "true"
+    allowHttp: true
     region: "minio"
     endpoint: "http://ballista-minio:9000"
 
