@@ -141,7 +141,7 @@ jobs:
             --set image.executor=ballista-executor \
             --set image.tag=$DOCKER_TAG \
             --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker \
-            --set minio.auth.rootPassword=$MINIO_PASSWORD
+            --set minio.auth.rootPassword="$MINIO_PASSWORD"
           kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
           kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
 
