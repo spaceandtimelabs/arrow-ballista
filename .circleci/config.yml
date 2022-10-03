@@ -124,7 +124,7 @@ jobs:
           echo 'var dfs = new File(s"$path/csv").listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
           echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/parquet/$n.parquet")}' >> run.scala
           echo 'System.exit(0)' >> run.scala
-          /opt/spark/bin/spark-shell -i run.scala
+          /opt/spark/bin/spark-shell -i /opt/spark/work-dir/run.scala
           ls -l /opt/spark/work-dir/project/parquet
       - persist_to_workspace:
           root: /opt/spark/work-dir
