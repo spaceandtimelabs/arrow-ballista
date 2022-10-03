@@ -87,6 +87,8 @@ jobs:
     steps:
       - setup_remote_docker
       - run: |
+          pwd
+          ls -la
           echo "generating data..."
           ./dbgen -v -s 0.1
           echo -e "c_custkey|c_name|c_address|c_nationkey|c_phone|c_acctbal|c_mktsegment|c_comment|junk\n$(cat customer.tbl)" > customer.csv
