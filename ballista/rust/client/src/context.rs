@@ -312,7 +312,8 @@ impl BallistaContext {
         }
 
         if let DFStatement::Statement(s) = &statements[0] {
-            match s.as_ref() {
+            let st: &Statement = s;
+            match st {
                 Statement::ShowVariable { .. } => {
                     is_show_variable = true;
                 }
