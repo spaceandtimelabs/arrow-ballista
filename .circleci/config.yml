@@ -126,7 +126,7 @@ jobs:
           echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/$n.parquet")}' >> run.scala
           echo 'System.exit(0)' >> run.scala
 
-deploy_helm:
+  deploy_helm:
     docker:
       - image: mcr.microsoft.com/azure-cli
     steps:
