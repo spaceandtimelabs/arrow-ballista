@@ -83,22 +83,13 @@ jobs:
 
   generate_data:
     docker:
-      - image: docker:17.05.0-ce-git
+      - image: ghcr.io/databloom-ai/tpch-docker:main
     steps:
       - setup_remote_docker
-      - attach_workspace:
-          at: /root
       - run: |
           echo "generating data..."
-          mkdir -p /root/project/data
-          cd /root/project/data
-          docker run -v /root/project/data:/data ghcr.io/databloom-ai/tpch-docker:main -v -s 0.1
-          pwd
-          ls -la
-          head customer.tbl
+          ./dbgen -v -s 0.1
           echo -e "c_custkey|c_name|c_address|c_nationkey|c_phone|c_acctbal|c_mktsegment|c_comment|junk\n$(cat customer.tbl)" > customer.csv
-          ls -la
-          head customer.csv
           echo -e "l_orderkey|l_partkey|l_suppkey|l_linenumber|l_quantity|l_extendedprice|l_discount|l_tax|l_returnflag|l_linestatus|l_shipdate|l_commitdate|l_receiptdate|l_shipinstruct|l_shipmode|l_comment|junk\n$(cat lineitem.tbl)" > lineitem.csv
           echo -e "n_nationkey|n_name|n_regionkey|n_comment|junk\n$(cat nation.tbl)" > nation.csv
           echo -e "o_orderkey|o_custkey|o_orderstatus|o_totalprice|o_orderdate|o_orderpriority|o_clerk|o_shippriority|o_comment|junk\n$(cat orders.tbl)" > orders.csv
@@ -106,6 +97,8 @@ jobs:
           echo -e "ps_partkey|ps_suppkey|ps_availqty|ps_supplycost|ps_comment|junk\n$(cat partsupp.tbl)" > partsupp.csv
           echo -e "r_regionkey|r_name|r_comment|junk\n$(cat region.tbl)" > region.csv
           echo -e "s_suppkey|s_name|s_address|s_nationkey|s_phone|s_acctbal|s_comment|junk\n$(cat supplier.tbl)" > supplier.csv
+          mkdir -p /root/project/data
+          cp *.csv /root/project/data
       - persist_to_workspace:
           root: /root
           paths:
