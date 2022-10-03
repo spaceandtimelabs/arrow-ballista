@@ -102,7 +102,7 @@ jobs:
           mkdir -p /root/project/data
           mv *.csv /root/project/data
           cd /root/project/data
-          head customers.csv
+          head customer.csv
       - persist_to_workspace:
           root: /root
           paths:
