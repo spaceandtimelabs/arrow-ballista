@@ -198,8 +198,8 @@ workflows:
             - tag
       - generate_data
       - convert_data:
-        requires:
-          - generate_data
+          requires:
+            - generate_data
       - deploy_docker:
           requires:
             - build_rust
