@@ -98,14 +98,38 @@ jobs:
           echo -e "ps_partkey|ps_suppkey|ps_availqty|ps_supplycost|ps_comment|junk\n$(cat partsupp.tbl)" > partsupp.csv
           echo -e "r_regionkey|r_name|r_comment|junk\n$(cat region.tbl)" > region.csv
           echo -e "s_suppkey|s_name|s_address|s_nationkey|s_phone|s_acctbal|s_comment|junk\n$(cat supplier.tbl)" > supplier.csv
-          mkdir -p /root/project/data
-          mv *.csv /root/project/data
-          cd /root/project/data
+          mkdir -p /root/project/csv
+          mv *.csv /root/project/csv
+          cd /root/project/csv
           head customer.csv
       - persist_to_workspace:
           root: /root
           paths:
             - project/data
+
+  convert_data:
+    docker:
+      - image: apache/spark
+    working_directory: /opt/spark/work-dir
+    steps:
+      - attach_workspace:
+          at: /opt/spark/work-dir
+      - run: |
+          pwd
+          ls -la
+          mkdir -p /opt/spark/work-dir/project/parquet
+          echo 'import java.io.File' >> run.scala
+          echo 'val path = "/opt/spark/work-dir/project"' >> run.scala
+          echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
+          echo 'var dfs = new File(s"$path/csv").listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
+          echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/parquet/$n.parquet")}' >> run.scala
+          echo 'System.exit(0)' >> run.scala
+          /opt/spark/bin/spark-shell -i run.scala
+          ls -l /opt/spark/work-dir/project/parquet
+      - persist_to_workspace:
+          root: /opt/spark/work-dir
+          paths:
+            - project/parquet
 
   deploy_helm:
     docker:
@@ -144,23 +168,6 @@ jobs:
           kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
           kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
 
-  convert_data:
-    docker:
-      - image: apache/spark
-    working_directory: /opt/spark/work-dir
-    steps:
-      - attach_workspace:
-          at: /opt/spark/work-dir
-      - run: |
-          pwd
-          ls -la
-          echo 'import java.io.File' >> run.scala
-          echo 'val path = "/opt/spark/work-dir"' >> run.scala
-          echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
-          echo 'var dfs = new File(path).listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
-          echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/$n.parquet")}' >> run.scala
-          echo 'System.exit(0)' >> run.scala
-
   seed_data:
     docker:
       - image: mcr.microsoft.com/azure-cli
@@ -188,9 +195,9 @@ jobs:
             sleep 3
           done          
           mc alias set myminio http://127.0.0.1:9000 minio minio123
-          cd /root/project/data
           mc mb --ignore-existing myminio/tpch
-          mc cp *.csv myminio/tpch
+          mc cp /root/project/csv/* myminio/tpch
+          mc cp /root/project/parquet/* myminio/tpch
           mc ls myminio/tpch
 
 workflows:
