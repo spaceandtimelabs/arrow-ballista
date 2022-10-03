@@ -107,30 +107,30 @@ jobs:
           paths:
             - project/csv
 
-  convert_data:
-    docker:
-      - image: apache/spark
-    working_directory: /opt/spark/work-dir
-    steps:
-      - attach_workspace:
-          at: /opt/spark/work-dir
-      - run: |
-          whoami
-          pwd
-          ls -la
-          mkdir -p /opt/spark/work-dir/project/parquet
-          echo 'import java.io.File' >> run.scala
-          echo 'val path = "/opt/spark/work-dir/project"' >> run.scala
-          echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
-          echo 'var dfs = new File(s"$path/csv").listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
-          echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/parquet/$n.parquet")}' >> run.scala
-          echo 'System.exit(0)' >> run.scala
-          /opt/spark/bin/spark-shell --conf spark.jars.ivy=/tmp/.ivy -i /opt/spark/work-dir/run.scala
-          ls -l /opt/spark/work-dir/project/parquet
-      - persist_to_workspace:
-          root: /opt/spark/work-dir
-          paths:
-            - project/parquet
+#  convert_data:
+#    docker:
+#      - image: apache/spark
+#    working_directory: /opt/spark/work-dir
+#    steps:
+#      - attach_workspace:
+#          at: /opt/spark/work-dir
+#      - run: |
+#          whoami
+#          pwd
+#          ls -la
+#          mkdir -p /opt/spark/work-dir/project/parquet
+#          echo 'import java.io.File' >> run.scala
+#          echo 'val path = "/opt/spark/work-dir/project"' >> run.scala
+#          echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
+#          echo 'var dfs = new File(s"$path/csv").listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
+#          echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/parquet/$n.parquet")}' >> run.scala
+#          echo 'System.exit(0)' >> run.scala
+#          /opt/spark/bin/spark-shell --conf spark.jars.ivy=/tmp/.ivy -i /opt/spark/work-dir/run.scala
+#          ls -l /opt/spark/work-dir/project/parquet
+#      - persist_to_workspace:
+#          root: /opt/spark/work-dir
+#          paths:
+#            - project/parquet
 
   deploy_helm:
     docker:
@@ -212,9 +212,9 @@ workflows:
           requires:
             - tag
       - generate_data
-      - convert_data:
-          requires:
-            - generate_data
+#      - convert_data:
+#          requires:
+#            - generate_data
       - deploy_docker:
           requires:
             - build_rust
@@ -224,5 +224,5 @@ workflows:
             - deploy_docker
       - seed_data:
           requires:
-            - convert_data
+            - generate_data
             - deploy_helm
