@@ -115,6 +115,7 @@ jobs:
       - attach_workspace:
           at: /opt/spark/work-dir
       - run: |
+          whoami
           pwd
           ls -la
           mkdir -p /opt/spark/work-dir/project/parquet
