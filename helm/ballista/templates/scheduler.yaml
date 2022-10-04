@@ -34,17 +34,6 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}/{{ .Values.image.scheduler }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          env:
-            - name: AWS_DEFAULT_REGION
-              value: {{.Values.config.s3.region}}
-            - name: AWS_ENDPOINT
-              value: {{.Values.config.s3.endpoint}}
-            - name: AWS_ALLOW_HTTP
-              value: {{.Values.config.s3.allowHttp | quote}}
-            - name: AWS_ACCESS_KEY_ID
-              value: {{.Values.minio.auth.rootUser}}
-            - name: AWS_SECRET_ACCESS_KEY
-              value: {{.Values.minio.auth.rootPassword}}
           ports:
             - name: flightsql
               containerPort: 50050
