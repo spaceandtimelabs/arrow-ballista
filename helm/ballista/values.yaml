@@ -96,6 +96,9 @@ affinity: {}
 
 minio:
   persistence:
+    enabled: false
     storageClass: azurefile-csi
+    size: 1Gi
+    existingClaim: ""
   auth:
     rootUser: minio

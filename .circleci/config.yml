@@ -159,14 +159,12 @@ jobs:
           helm dep update --namespace $NAMESPACE 
           helm dep build --namespace $NAMESPACE 
           helm uninstall ballista || true # some actions require a complete uninstall and reinstall
-          helm install ballista . --namespace $NAMESPACE --debug \
+          helm install --wait ballista . --namespace $NAMESPACE --debug \
             --set image.scheduler=ballista-scheduler \
             --set image.executor=ballista-executor \
             --set image.tag=$DOCKER_TAG \
             --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker \
             --set minio.auth.rootPassword="$MINIO_PASSWORD"
-          kubectl rollout status --watch --timeout=4m statefulSet ballista-scheduler
-          kubectl rollout status --watch --timeout=4m statefulSet ballista-executor
 
   seed_data:
     docker:
@@ -176,7 +174,6 @@ jobs:
           at: /root
       - run: |
           set -x
-          apk add netcat-openbsd
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           az login --username=$AZ_USER --password=$AZ_PASS
@@ -191,9 +188,6 @@ jobs:
             export NAMESPACE=$(echo "$CIRCLE_BRANCH" | sed -r 's/[_]+/-/g')
           fi
           kubectl port-forward --namespace $NAMESPACE service/ballista-minio 9000:9000 9001:9001 &
-          while ! nc -vz 127.0.0.1 9000 > /dev/null 2>&1 ; do
-            sleep 3
-          done          
           mc alias set myminio http://127.0.0.1:9000 minio "$MINIO_PASSWORD"
           mc mb --ignore-existing myminio/tpch
           mc cp --quiet --no-color --debug /root/project/csv/* myminio/tpch
