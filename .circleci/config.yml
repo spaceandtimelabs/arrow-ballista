@@ -108,23 +108,22 @@ jobs:
 
   convert_data:
     docker:
-      - image: apache/spark:v3.2.2
-    working_directory: /opt/spark/work-dir
+      - image: hashicorp/spark-nomad
     steps:
       - attach_workspace:
-          at: /opt/spark/work-dir
+          at: /root
       - run: |
-          mkdir -p /opt/spark/work-dir/project/parquet
+          mkdir -p /root/project/parquet
           echo 'import java.io.File' >> run.scala
-          echo 'val path = "/opt/spark/work-dir/project"' >> run.scala
+          echo 'val path = "/root/project"' >> run.scala
           echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
           echo 'var dfs = new File(s"$path/csv").listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
           echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/parquet/$n.parquet")}' >> run.scala
           echo 'System.exit(0)' >> run.scala
-          /opt/spark/bin/spark-shell -i /opt/spark/work-dir/run.scala
-          ls -l /opt/spark/work-dir/project/parquet
+          spark-shell -i run.scala
+          ls -l /root/project/parquet
       - persist_to_workspace:
-          root: /opt/spark/work-dir
+          root: /root
           paths:
             - project/parquet
 
