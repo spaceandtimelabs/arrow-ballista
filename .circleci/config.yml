@@ -195,7 +195,7 @@ jobs:
           while ! nc -vz 127.0.0.1 9000 > /dev/null 2>&1 ; do
             sleep 3
           done          
-          mc alias set myminio http://127.0.0.1:9000 minio minio123
+          mc alias set myminio http://127.0.0.1:9000 minio "$MINIO_PASSWORD"
           mc mb --ignore-existing myminio/tpch
           mc cp /root/project/csv/* myminio/tpch
           mc cp /root/project/parquet/* myminio/tpch
