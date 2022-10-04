@@ -23,7 +23,7 @@ use crate::{
     helper::CliHelper,
     print_options::PrintOptions,
 };
-use datafusion::error::{DataFusionError, Result};
+use datafusion::error::Result;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::fs::File;

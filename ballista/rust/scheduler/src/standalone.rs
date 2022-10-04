@@ -18,6 +18,7 @@
 use crate::{
     scheduler_server::SchedulerServer, state::backend::standalone::StandaloneClient,
 };
+use ballista_core::error::BallistaError;
 use ballista_core::serde::protobuf::PhysicalPlanNode;
 use ballista_core::serde::BallistaCodec;
 use ballista_core::utils::create_grpc_server;
@@ -29,6 +30,7 @@ use datafusion_proto::protobuf::LogicalPlanNode;
 use log::info;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use tonic::transport::{Identity, ServerTlsConfig};
 
 pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
     let client = StandaloneClient::try_new_temporary()?;
@@ -48,8 +50,16 @@ pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
         "Ballista v{} Rust Scheduler listening on {:?}",
         BALLISTA_VERSION, addr
     );
+
+    let cert = tokio::fs::read("tls/server_public.pem").await?;
+    let key = tokio::fs::read("tls/server_private.pem").await?;
+
+    let identity = Identity::from_pem(cert, key);
+    let config = ServerTlsConfig::new().identity(identity);
+
     tokio::spawn(
-        create_grpc_server()
+        create_grpc_server(Some(config))
+            .map_err(|e| BallistaError::from(e))?
             .add_service(server)
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
                 listener,

@@ -42,6 +42,7 @@ use datafusion::prelude::{
     AvroReadOptions, CsvReadOptions, ParquetReadOptions, SessionConfig, SessionContext,
 };
 use datafusion::sql::parser::{DFParser, Statement as DFStatement};
+use tonic::transport::{Certificate, ClientTlsConfig};
 
 struct BallistaContextState {
     /// Ballista configuration
@@ -93,7 +94,15 @@ impl BallistaContext {
             "Connecting to Ballista scheduler at {}",
             scheduler_url.clone()
         );
-        let connection = create_grpc_client_connection(scheduler_url.clone())
+
+        let pem = tokio::fs::read("tls/ca-cert.pem").await?;
+        let ca = Certificate::from_pem(pem);
+
+        let tls = ClientTlsConfig::new()
+            .ca_certificate(ca)
+            .domain_name("example.com");
+
+        let connection = create_grpc_client_connection(scheduler_url.clone(), Some(tls))
             .await
             .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
         let mut scheduler = SchedulerGrpcClient::new(connection);

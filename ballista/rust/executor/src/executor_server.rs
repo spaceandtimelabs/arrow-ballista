@@ -24,7 +24,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, RwLock};
 
 use log::{debug, error, info, warn};
-use tonic::transport::Channel;
+use tonic::transport::{
+    Certificate, Channel, ClientTlsConfig, Identity, ServerTlsConfig,
+};
 use tonic::{Request, Response, Status};
 
 use ballista_core::error::BallistaError;
@@ -97,6 +99,12 @@ pub async fn startup<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>(
         codec,
     );
 
+    let cert = tokio::fs::read("tls/server_public.pem").await?;
+    let key = tokio::fs::read("tls/server_private.pem").await?;
+
+    let identity = Identity::from_pem(cert, key);
+    let config = ServerTlsConfig::new().identity(identity);
+
     // 1. Start executor grpc service
     let server = {
         let executor_meta = executor.metadata.clone();
@@ -111,7 +119,8 @@ pub async fn startup<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan>(
         let mut grpc_shutdown = shutdown_noti.subscribe_for_shutdown();
         tokio::spawn(async move {
             let shutdown_signal = grpc_shutdown.recv();
-            let grpc_server_future = create_grpc_server()
+            let grpc_server_future = create_grpc_server(Some(config))
+                .map_err(|e| BallistaError::from(e))?
                 .add_service(server)
                 .serve_with_shutdown(addr, shutdown_signal);
             grpc_server_future.await.map_err(|e| {
@@ -225,7 +234,14 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
             Ok(scheduler)
         } else {
             let scheduler_url = format!("http://{}", scheduler_id);
-            let connection = create_grpc_client_connection(scheduler_url).await?;
+            let pem = tokio::fs::read("tls/ca-cert.pem").await?;
+            let ca = Certificate::from_pem(pem);
+
+            let tls = ClientTlsConfig::new()
+                .ca_certificate(ca)
+                .domain_name("example.com");
+            let connection =
+                create_grpc_client_connection(scheduler_url, Some(tls)).await?;
             let scheduler = SchedulerGrpcClient::new(connection);
 
             {

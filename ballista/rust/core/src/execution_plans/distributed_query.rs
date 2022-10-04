@@ -46,6 +46,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
+use tonic::transport::{Certificate, ClientTlsConfig};
 
 /// This operator sends a logical plan to a Ballista scheduler for execution and
 /// polls the scheduler until the query is complete and then fetches the resulting
@@ -237,7 +238,15 @@ async fn execute_query(
 ) -> Result<impl Stream<Item = ArrowResult<RecordBatch>> + Send> {
     info!("Connecting to Ballista scheduler at {}", scheduler_url);
     // TODO reuse the scheduler to avoid connecting to the Ballista scheduler again and again
-    let connection = create_grpc_client_connection(scheduler_url)
+
+    let pem = tokio::fs::read("tls/ca-cert.pem").await?;
+    let ca = Certificate::from_pem(pem);
+
+    let tls = ClientTlsConfig::new()
+        .ca_certificate(ca)
+        .domain_name("example.com");
+
+    let connection = create_grpc_client_connection(scheduler_url, Some(tls))
         .await
         .map_err(|e| DataFusionError::Execution(format!("{:?}", e)))?;
 

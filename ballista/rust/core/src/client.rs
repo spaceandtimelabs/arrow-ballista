@@ -44,7 +44,10 @@ use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt};
 use log::debug;
 use prost::Message;
-use tonic::Streaming;
+use tonic::{
+    transport::{Certificate, ClientTlsConfig},
+    Streaming,
+};
 
 /// Client for interacting with Ballista executors.
 #[derive(Clone)]
@@ -58,15 +61,22 @@ impl BallistaClient {
     pub async fn try_new(host: &str, port: u16) -> Result<Self> {
         let addr = format!("http://{}:{}", host, port);
         debug!("BallistaClient connecting to {}", addr);
-        let connection =
-            create_grpc_client_connection(addr.clone())
-                .await
-                .map_err(|e| {
-                    BallistaError::GrpcConnectionError(format!(
-                        "Error connecting to Ballista scheduler or executor at {}: {:?}",
-                        addr, e
-                    ))
-                })?;
+
+        let pem = tokio::fs::read("tls/ca-cert.pem").await?;
+        let ca = Certificate::from_pem(pem);
+
+        let tls = ClientTlsConfig::new()
+            .ca_certificate(ca)
+            .domain_name("example.com");
+
+        let connection = create_grpc_client_connection(addr.clone(), Some(tls))
+            .await
+            .map_err(|e| {
+                BallistaError::General(format!(
+                    "Error connecting to Ballista scheduler or executor at {}: {:?}",
+                    addr, e
+                ))
+            })?;
         let flight_client = FlightServiceClient::new(connection);
         debug!("BallistaClient connected OK");
 
