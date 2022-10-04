@@ -198,7 +198,6 @@ jobs:
           mc alias set myminio http://127.0.0.1:9000 minio "$MINIO_PASSWORD"
           mc mb --ignore-existing myminio/tpch
           mc cp /root/project/csv/* myminio/tpch
-#          mc cp /root/project/parquet/* myminio/tpch
           mc ls myminio/tpch
 
 workflows:
