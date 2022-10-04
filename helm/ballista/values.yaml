@@ -95,5 +95,7 @@ tolerations: []
 affinity: {}
 
 minio:
+  persistence:
+    storageClass: azurefile-csi
   auth:
     rootUser: minio
