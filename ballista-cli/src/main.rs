@@ -114,7 +114,7 @@ pub async fn main() -> Result<()> {
 
     let ballista_config = ballista_config_builder.build()?;
 
-    let ctx = match (args.host, args.port) {
+    let mut ctx = match (args.host, args.port) {
         (Some(ref host), Some(port)) => {
             // Distributed execution with Ballista Remote
             BallistaContext::remote(host, port, &ballista_config).await?
