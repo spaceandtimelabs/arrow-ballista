@@ -151,7 +151,7 @@ jobs:
           kubectl create namespace $NAMESPACE || true
           kubectl config set-context --current --namespace=$NAMESPACE
           kubectl create secret docker-registry regcred \
-            --docker-server=https://spaceandtime.jfrog.io/dw-docker-local \
+            --docker-server=https://spaceandtime.jfrog.io/sxt-docker-central \
             --docker-username=$ARTIFACTORY_USER \
             --docker-password=$ARTIFACTORY_API_KEY \
             --docker-email=$ARTIFACTORY_EMAIL || true
@@ -163,7 +163,7 @@ jobs:
             --set image.scheduler=ballista-scheduler \
             --set image.executor=ballista-executor \
             --set image.tag=$DOCKER_TAG \
-            --set image.repository=spaceandtime.jfrog.io/dw-docker-local \
+            --set image.repository=spaceandtime.jfrog.io/sxt-docker-central \
             --set minio.auth.rootPassword="$MINIO_PASSWORD"
 
   seed_data:
