@@ -74,11 +74,11 @@ jobs:
           at: /root
       - run: |
           export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
-          docker build -f dev/docker/ballista-scheduler.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
-          docker build -f dev/docker/ballista-executor.Dockerfile . -t spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
+          docker build -f dev/docker/ballista-scheduler.Dockerfile . -t spaceandtime.jfrog.io/dw-docker-local/ballista-scheduler:$DOCKER_TAG
+          docker build -f dev/docker/ballista-executor.Dockerfile . -t spaceandtime.jfrog.io/dw-docker-local/ballista-executor:$DOCKER_TAG
           docker login -u$ARTIFACTORY_USER -p$ARTIFACTORY_API_KEY spaceandtime.jfrog.io
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-scheduler:$DOCKER_TAG
-          docker push spaceandtime.jfrog.io/sxt-docker-docker/ballista-executor:$DOCKER_TAG
+          docker push spaceandtime.jfrog.io/dw-docker-local/ballista-scheduler:$DOCKER_TAG
+          docker push spaceandtime.jfrog.io/dw-docker-local/ballista-executor:$DOCKER_TAG
 
   generate_data:
     docker:
@@ -151,7 +151,7 @@ jobs:
           kubectl create namespace $NAMESPACE || true
           kubectl config set-context --current --namespace=$NAMESPACE
           kubectl create secret docker-registry regcred \
-            --docker-server=https://spaceandtime.jfrog.io/sxt-docker-docker \
+            --docker-server=https://spaceandtime.jfrog.io/dw-docker-local \
             --docker-username=$ARTIFACTORY_USER \
             --docker-password=$ARTIFACTORY_API_KEY \
             --docker-email=$ARTIFACTORY_EMAIL || true
@@ -163,7 +163,7 @@ jobs:
             --set image.scheduler=ballista-scheduler \
             --set image.executor=ballista-executor \
             --set image.tag=$DOCKER_TAG \
-            --set image.repository=spaceandtime.jfrog.io/sxt-docker-docker \
+            --set image.repository=spaceandtime.jfrog.io/dw-docker-local \
             --set minio.auth.rootPassword="$MINIO_PASSWORD"
 
   seed_data:
