@@ -38,7 +38,8 @@ jobs:
           export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           export PATH=/root/.cargo/bin:$PATH
-          cargo build --release --all --features flight-sql
+          cargo build --release --bin ballista-scheduler --features flight-sql
+          cargo build --release --bin ballista-executor
       - persist_to_workspace:
           root: /root
           paths:
