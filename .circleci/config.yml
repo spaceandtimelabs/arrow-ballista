@@ -109,24 +109,45 @@ jobs:
 
   convert_data:
     docker:
-      - image: hashicorp/spark-nomad
+      - image: eclipse-temurin:8-jre
     steps:
       - attach_workspace:
           at: /root
       - run: |
+          cd /root/project/
+          echo "installing spark..."
+          export SPARK_VERSION=3.2.1
+          export HADOOP_VERSION=3.2
+          export DELTA_VERSION=1.2.1
+          export SCALA_VERSION=2.12
+          export SPARK_ARCHIVE="spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz"
+          wget "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_ARCHIVE}"
+          tar -xf "$SPARK_ARCHIVE"
+          echo "installing deltalake..."
+          export SPARK_DIR="/root/project/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}"
+          wget https://repo1.maven.org/maven2/io/delta/delta-core_$SCALA_VERSION/$DELTA_VERSION/delta-core_$SCALA_VERSION-$DELTA_VERSION.jar -P $SPARK_DIR/jars/
+          wget https://repo1.maven.org/maven2/io/delta/delta-storage/$DELTA_VERSION/delta-storage-$DELTA_VERSION.jar -P $SPARK_DIR/jars/
+          echo "converting data..."
           mkdir -p /root/project/parquet
+          mkdir -p /root/project/delta
           echo 'import java.io.File' >> run.scala
           echo 'val path = "/root/project"' >> run.scala
           echo 'val opts = Map("inferSchema"->"true","delimiter"->"|","header"->"true")' >> run.scala
           echo 'var dfs = new File(s"$path/csv").listFiles.map(f => (f.getName.split("\\.").head, spark.read.options(opts).csv(f.getCanonicalPath))).toMap' >> run.scala
           echo 'dfs.foreach{case (n, df) => df.write.parquet(s"$path/parquet/$n.parquet")}' >> run.scala
+          echo 'dfs.foreach{case (n, df) => df.write.format("delta").save(s"$path/delta/$n")}' >> run.scala
           echo 'System.exit(0)' >> run.scala
-          spark-shell -i run.scala
+          spark-shell --packages io.delta:delta-core_$SCALA_VERSION:$DELTA_VERSION \
+            --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \
+            --conf "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" \
+            -i run.scala
           ls -l /root/project/parquet
+          ls -l /root/project/delta
       - persist_to_workspace:
           root: /root
           paths:
             - project/parquet
+            - project/delta
 
   deploy_helm:
     docker:
