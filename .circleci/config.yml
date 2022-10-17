@@ -172,7 +172,7 @@ jobs:
           fi
           kubectl create namespace $NAMESPACE || true
           kubectl config set-context --current --namespace=$NAMESPACE
-          kubectl delete secret regcred
+          kubectl delete secret --ignore-not-found=true regcred
           kubectl create secret docker-registry regcred \
             --docker-server=https://spaceandtime.jfrog.io/sxt-docker-central \
             --docker-username=$ARTIFACTORY_USER \
