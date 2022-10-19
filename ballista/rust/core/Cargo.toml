@@ -41,13 +41,13 @@ simd = ["datafusion/simd"]
 [dependencies]
 ahash = { version = "0.8", default-features = false }
 
-arrow-flight = { git = "https://github.com/apache/arrow-rs.git", rev = "4df1f3c62f6d089d8cf02892168b9179e4c8c6fd", features = ["flight-sql-experimental"] }
+arrow-flight = { version = "24.0.0", features = ["flight-sql-experimental"] }
 async-trait = "0.1.41"
 chrono = { version = "0.4", default-features = false }
 clap = { version = "3", features = ["derive", "cargo"] }
-datafusion = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "ec72b6292c83d767790c1eb54cf80e75caa5c3c9" }
+datafusion = "13.0.0"
 datafusion-objectstore-hdfs = { version = "0.1.0", optional = true }
-datafusion-proto = { git = "https://github.com/spaceandtimelabs/arrow-datafusion.git", rev = "ec72b6292c83d767790c1eb54cf80e75caa5c3c9" }
+datafusion-proto = "13.0.0"
 futures = "0.3"
 hashbrown = "0.12"
 
@@ -63,7 +63,7 @@ prost = "0.11"
 prost-types = "0.11"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
-sqlparser = "0.23"
+sqlparser = "0.25"
 tokio = "1.0"
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = { version = "0.8", features = ["tls"] }

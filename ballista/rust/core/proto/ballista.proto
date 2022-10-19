@@ -437,6 +437,8 @@ message ExecutionGraph {
   uint32 task_id_gen = 8;
   repeated StageAttempts failed_attempts = 9;
   string job_name = 10;
+  uint64 start_time = 11;
+  uint64 end_time = 12;
 }
 
 message StageAttempts {
@@ -845,10 +847,11 @@ message HeartBeatResult {
 }
 
 message StopExecutorParams {
+  string executor_id = 1;
   // stop reason
-  string reason = 1;
+  string reason = 2;
   // force to stop the executor immediately
-  bool force = 2;
+  bool force = 3;
 }
 
 message StopExecutorResult {
@@ -974,6 +977,13 @@ message CancelTasksResult {
   bool cancelled = 1;
 }
 
+message RemoveJobDataParams {
+  string job_id = 1;
+}
+
+message RemoveJobDataResult {
+}
+
 message RunningTaskInfo {
   uint32 task_id = 1;
   string job_id = 2;
@@ -1013,4 +1023,6 @@ service ExecutorGrpc {
   rpc StopExecutor (StopExecutorParams) returns (StopExecutorResult) {}
 
   rpc CancelTasks (CancelTasksParams) returns (CancelTasksResult) {}
+
+  rpc RemoveJobData (RemoveJobDataParams) returns (RemoveJobDataResult) {}
 }

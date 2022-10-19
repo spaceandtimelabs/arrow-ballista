@@ -17,12 +17,12 @@
 
 use crate::scheduler_server::event::QueryStageSchedulerEvent;
 use crate::scheduler_server::SessionBuilder;
-use crate::state::backend::{Keyspace, Lock, StateBackendClient};
+use crate::state::backend::{Keyspace, Operation, StateBackendClient};
 use crate::state::execution_graph::{
     ExecutionGraph, ExecutionStage, RunningTaskInfo, TaskDescription,
 };
 use crate::state::executor_manager::{ExecutorManager, ExecutorReservation};
-use crate::state::{decode_protobuf, encode_protobuf, with_lock};
+use crate::state::{decode_protobuf, encode_protobuf, with_lock, with_locks};
 use ballista_core::config::BallistaConfig;
 #[cfg(not(test))]
 use ballista_core::error::BallistaError;
@@ -35,6 +35,7 @@ use ballista_core::serde::protobuf::{
 use ballista_core::serde::scheduler::to_proto::hash_partitioning_to_proto;
 use ballista_core::serde::scheduler::ExecutorMetadata;
 use ballista_core::serde::{AsExecutionPlan, BallistaCodec};
+use dashmap::DashMap;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::logical_plan::AsLogicalPlan;
@@ -43,10 +44,10 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-
-type ExecutionGraphCache = Arc<RwLock<HashMap<String, Arc<RwLock<ExecutionGraph>>>>>;
+type ExecutionGraphCache = Arc<DashMap<String, Arc<RwLock<ExecutionGraph>>>>;
 
 // TODO move to configuration file
 /// Default max failure attempts for task level retry
@@ -85,7 +86,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
             session_builder,
             codec,
             scheduler_id,
-            active_job_cache: Arc::new(RwLock::new(HashMap::new())),
+            active_job_cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -95,7 +96,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
     pub async fn submit_job(
         &self,
         job_id: &str,
-        job_name: Option<String>,
+        job_name: &str,
         session_id: &str,
         plan: Arc<dyn ExecutionPlan>,
     ) -> Result<()> {
@@ -111,9 +112,8 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
             .await?;
 
         graph.revive();
-
-        let mut active_graph_cache = self.active_job_cache.write().await;
-        active_graph_cache.insert(job_id.to_owned(), Arc::new(RwLock::new(graph)));
+        self.active_job_cache
+            .insert(job_id.to_owned(), Arc::new(RwLock::new(graph)));
 
         Ok(())
     }
@@ -134,6 +134,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         let mut jobs = vec![];
         for job_id in &job_ids {
             let graph = self.get_execution_graph(job_id).await?;
+
             let mut completed_stages = 0;
             for stage in graph.stages().values() {
                 if let ExecutionStage::Successful(_) = stage {
@@ -142,8 +143,10 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
             }
             jobs.push(JobOverview {
                 job_id: job_id.clone(),
-                job_name: graph.job_name().cloned(),
+                job_name: graph.job_name().to_string(),
                 status: graph.status(),
+                start_time: graph.start_time(),
+                end_time: graph.end_time(),
                 num_stages: graph.stage_count(),
                 completed_stages,
             });
@@ -262,8 +265,8 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         let mut assignments: Vec<(String, TaskDescription)> = vec![];
         let mut pending_tasks = 0usize;
         let mut assign_tasks = 0usize;
-        let job_cache = self.active_job_cache.read().await;
-        for (_job_id, graph) in job_cache.iter() {
+        for pairs in self.active_job_cache.iter() {
+            let (_job_id, graph) = pairs.pair();
             let mut graph = graph.write().await;
             for reservation in free_reservations.iter().skip(assign_tasks) {
                 if let Some(task) = graph.pop_next_task(&reservation.executor_id)? {
@@ -288,7 +291,11 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
 
     /// Mark a job to success. This will create a key under the CompletedJobs keyspace
     /// and remove the job from ActiveJobs
-    pub async fn succeed_job(&self, job_id: &str) -> Result<()> {
+    pub(crate) async fn succeed_job(
+        &self,
+        job_id: &str,
+        clean_up_interval: u64,
+    ) -> Result<()> {
         debug!("Moving job {} from Active to Success", job_id);
         let lock = self.state.lock(Keyspace::ActiveJobs, "").await?;
         with_lock(lock, self.state.delete(Keyspace::ActiveJobs, job_id)).await?;
@@ -302,17 +309,32 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
                     .await?;
             } else {
                 error!("Job {} has not finished and cannot be completed", job_id);
+                return Ok(());
             }
         } else {
             warn!("Fail to find job {} in the cache", job_id);
         }
 
+        // spawn a delayed future to clean up job data on both Scheduler and Executors
+        let state = self.state.clone();
+        let job_id_str = job_id.to_owned();
+        let active_job_cache = self.active_job_cache.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(clean_up_interval)).await;
+            Self::clean_up_job_data(state, active_job_cache, false, job_id_str).await
+        });
+
         Ok(())
     }
 
     /// Cancel the job and return a Vec of running tasks need to cancel
-    pub(crate) async fn cancel_job(&self, job_id: &str) -> Result<Vec<RunningTaskInfo>> {
-        self.abort_job(job_id, "Cancelled".to_owned()).await
+    pub(crate) async fn cancel_job(
+        &self,
+        job_id: &str,
+        clean_up_interval_in_secs: u64,
+    ) -> Result<Vec<RunningTaskInfo>> {
+        self.abort_job(job_id, "Cancelled".to_owned(), clean_up_interval_in_secs)
+            .await
     }
 
     /// Abort the job and return a Vec of running tasks need to cancel
@@ -320,68 +342,111 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         &self,
         job_id: &str,
         failure_reason: String,
+        clean_up_interval_in_secs: u64,
     ) -> Result<Vec<RunningTaskInfo>> {
-        let lock = self.state.lock(Keyspace::ActiveJobs, "").await?;
-        if let Some(graph) = self.get_active_execution_graph(job_id).await {
+        let locks = self
+            .state
+            .acquire_locks(vec![
+                (Keyspace::ActiveJobs, job_id),
+                (Keyspace::FailedJobs, job_id),
+            ])
+            .await?;
+        let tasks_to_cancel = if let Some(graph) =
+            self.get_active_execution_graph(job_id).await
+        {
             let running_tasks = graph.read().await.running_tasks();
             info!(
                 "Cancelling {} running tasks for job {}",
                 running_tasks.len(),
                 job_id
             );
-            self.fail_job_state(lock, job_id, failure_reason).await?;
-            Ok(running_tasks)
+            with_locks(locks, self.fail_job_state(job_id, failure_reason)).await?;
+            running_tasks
         } else {
             // TODO listen the job state update event and fix task cancelling
             warn!("Fail to find job {} in the cache, unable to cancel tasks for job, fail the job state only.", job_id);
-            self.fail_job_state(lock, job_id, failure_reason).await?;
-            Ok(vec![])
-        }
+            with_locks(locks, self.fail_job_state(job_id, failure_reason)).await?;
+            vec![]
+        };
+
+        // spawn a delayed future to clean up job data on both Scheduler and Executors
+        let state = self.state.clone();
+        let job_id_str = job_id.to_owned();
+        let active_job_cache = self.active_job_cache.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(clean_up_interval_in_secs)).await;
+            Self::clean_up_job_data(state, active_job_cache, true, job_id_str).await
+        });
+
+        Ok(tasks_to_cancel)
     }
 
     /// Mark a unscheduled job as failed. This will create a key under the FailedJobs keyspace
     /// and remove the job from ActiveJobs or QueuedJobs
-    /// TODO this should be atomic
     pub async fn fail_unscheduled_job(
         &self,
         job_id: &str,
         failure_reason: String,
+        clean_up_interval_in_secs: u64,
     ) -> Result<()> {
         debug!("Moving job {} from Active or Queue to Failed", job_id);
-        let lock = self.state.lock(Keyspace::ActiveJobs, "").await?;
-        self.fail_job_state(lock, job_id, failure_reason).await
+        let locks = self
+            .state
+            .acquire_locks(vec![
+                (Keyspace::ActiveJobs, job_id),
+                (Keyspace::FailedJobs, job_id),
+            ])
+            .await?;
+        with_locks(locks, self.fail_job_state(job_id, failure_reason)).await?;
+
+        // spawn a delayed future to clean up job data on Scheduler
+        let state = self.state.clone();
+        let job_id_str = job_id.to_owned();
+        let active_job_cache = self.active_job_cache.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(clean_up_interval_in_secs)).await;
+            Self::clean_up_job_data(state, active_job_cache, true, job_id_str).await
+        });
+
+        Ok(())
     }
 
-    async fn fail_job_state(
-        &self,
-        lock: Box<dyn Lock>,
-        job_id: &str,
-        failure_reason: String,
-    ) -> Result<()> {
-        with_lock(lock, self.state.delete(Keyspace::ActiveJobs, job_id)).await?;
+    async fn fail_job_state(&self, job_id: &str, failure_reason: String) -> Result<()> {
+        let txn_operations = |value: Vec<u8>| -> Vec<(Operation, Keyspace, String)> {
+            vec![
+                (Operation::Delete, Keyspace::ActiveJobs, job_id.to_string()),
+                (
+                    Operation::Put(value),
+                    Keyspace::FailedJobs,
+                    job_id.to_string(),
+                ),
+            ]
+        };
 
-        let value = if let Some(graph) = self.get_active_execution_graph(job_id).await {
+        let _res = if let Some(graph) = self.get_active_execution_graph(job_id).await {
             let mut graph = graph.write().await;
-            for stage_id in graph.running_stages() {
-                graph.fail_stage(stage_id, failure_reason.clone());
-            }
+            let previous_status = graph.status();
             graph.fail_job(failure_reason);
-            let graph = graph.clone();
-            self.encode_execution_graph(graph)?
+            let value = self.encode_execution_graph(graph.clone())?;
+            let txn_ops = txn_operations(value);
+            let result = self.state.apply_txn(txn_ops).await;
+            if result.is_err() {
+                // Rollback
+                graph.update_status(previous_status);
+                warn!("Rollback Execution Graph state change since it did not persisted due to a possible connection error.")
+            };
+            result
         } else {
-            warn!("Fail to find job {} in the cache", job_id);
-
+            info!("Fail to find job {} in the cache", job_id);
             let status = JobStatus {
                 status: Some(job_status::Status::Failed(FailedJob {
                     error: failure_reason.clone(),
                 })),
             };
-            encode_protobuf(&status)?
+            let value = encode_protobuf(&status)?;
+            let txn_ops = txn_operations(value);
+            self.state.apply_txn(txn_ops).await
         };
-
-        self.state
-            .put(Keyspace::FailedJobs, job_id.to_owned(), value)
-            .await?;
 
         Ok(())
     }
@@ -408,10 +473,10 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         // Collect all the running task need to cancel when there are running stages rolled back.
         let mut running_tasks_to_cancel: Vec<RunningTaskInfo> = vec![];
         // Collect graphs we update so we can update them in storage
-        let mut updated_graphs: HashMap<String, ExecutionGraph> = HashMap::new();
+        let updated_graphs: DashMap<String, ExecutionGraph> = DashMap::new();
         {
-            let job_cache = self.active_job_cache.read().await;
-            for (job_id, graph) in job_cache.iter() {
+            for pairs in self.active_job_cache.iter() {
+                let (job_id, graph) = pairs.pair();
                 let mut graph = graph.write().await;
                 let reset = graph.reset_stages_on_lost_executor(executor_id)?;
                 if !reset.0.is_empty() {
@@ -424,14 +489,14 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         let lock = self.state.lock(Keyspace::ActiveJobs, "").await?;
         with_lock(lock, async {
             // Transactional update graphs
-            let txn_ops: Vec<(Keyspace, String, Vec<u8>)> = updated_graphs
+            let txn_ops: Vec<(Operation, Keyspace, String)> = updated_graphs
                 .into_iter()
                 .map(|(job_id, graph)| {
                     let value = self.encode_execution_graph(graph)?;
-                    Ok((Keyspace::ActiveJobs, job_id, value))
+                    Ok((Operation::Put(value), Keyspace::ActiveJobs, job_id))
                 })
                 .collect::<Result<Vec<_>>>()?;
-            self.state.put_txn(txn_ops).await?;
+            self.state.apply_txn(txn_ops).await?;
             Ok(running_tasks_to_cancel)
         })
         .await
@@ -524,8 +589,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
         &self,
         job_id: &str,
     ) -> Option<Arc<RwLock<ExecutionGraph>>> {
-        let active_graph_cache = self.active_job_cache.read().await;
-        active_graph_cache.get(job_id).cloned()
+        self.active_job_cache.get(job_id).map(|value| value.clone())
     }
 
     /// Get the `ExecutionGraph` for the given job ID. This will search fist in the `ActiveJobs`
@@ -583,12 +647,33 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> TaskManager<T, U>
             .take(7)
             .collect()
     }
+
+    async fn clean_up_job_data(
+        state: Arc<dyn StateBackendClient>,
+        active_job_cache: ExecutionGraphCache,
+        failed: bool,
+        job_id: String,
+    ) -> Result<()> {
+        active_job_cache.remove(&job_id);
+        let keyspace = if failed {
+            Keyspace::FailedJobs
+        } else {
+            Keyspace::CompletedJobs
+        };
+
+        let lock = state.lock(keyspace.clone(), "").await?;
+        with_lock(lock, state.delete(keyspace, &job_id)).await?;
+
+        Ok(())
+    }
 }
 
 pub struct JobOverview {
     pub job_id: String,
-    pub job_name: Option<String>,
+    pub job_name: String,
     pub status: JobStatus,
+    pub start_time: u64,
+    pub end_time: u64,
     pub num_stages: usize,
     pub completed_stages: usize,
 }

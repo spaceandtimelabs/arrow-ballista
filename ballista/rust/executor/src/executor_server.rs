@@ -19,9 +19,10 @@ use ballista_core::BALLISTA_VERSION;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::ops::Deref;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
 use log::{debug, error, info, warn};
 use tonic::transport::{
@@ -39,7 +40,8 @@ use ballista_core::serde::protobuf::{
     executor_metric, executor_status, CancelTasksParams, CancelTasksResult,
     ExecutorMetric, ExecutorStatus, HeartBeatParams, LaunchMultiTaskParams,
     LaunchMultiTaskResult, LaunchTaskParams, LaunchTaskResult, RegisterExecutorParams,
-    StopExecutorParams, StopExecutorResult, TaskStatus, UpdateTaskStatusParams,
+    RemoveJobDataParams, RemoveJobDataResult, StopExecutorParams, StopExecutorResult,
+    TaskStatus, UpdateTaskStatusParams,
 };
 use ballista_core::serde::scheduler::PartitionId;
 use ballista_core::serde::scheduler::TaskDefinition;
@@ -47,6 +49,7 @@ use ballista_core::serde::{AsExecutionPlan, BallistaCodec};
 use ballista_core::utils::{
     collect_plan_metrics, create_grpc_client_connection, create_grpc_server,
 };
+use dashmap::DashMap;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion_proto::logical_plan::AsLogicalPlan;
@@ -59,7 +62,7 @@ use crate::shutdown::ShutdownNotifier;
 use crate::{as_task_status, TaskExecutionTimes};
 
 type ServerHandle = JoinHandle<Result<(), BallistaError>>;
-type SchedulerClients = Arc<RwLock<HashMap<String, SchedulerGrpcClient<Channel>>>>;
+type SchedulerClients = Arc<DashMap<String, SchedulerGrpcClient<Channel>>>;
 
 /// Wrap TaskDefinition with its curator scheduler id for task update to its specific curator scheduler later
 #[derive(Debug)]
@@ -225,10 +228,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
         &self,
         scheduler_id: &str,
     ) -> Result<SchedulerGrpcClient<Channel>, BallistaError> {
-        let scheduler = {
-            let schedulers = self.schedulers.read().await;
-            schedulers.get(scheduler_id).cloned()
-        };
+        let scheduler = self.schedulers.get(scheduler_id).map(|value| value.clone());
         // If channel does not exist, create a new one
         if let Some(scheduler) = scheduler {
             Ok(scheduler)
@@ -245,8 +245,8 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
             let scheduler = SchedulerGrpcClient::new(connection);
 
             {
-                let mut schedulers = self.schedulers.write().await;
-                schedulers.insert(scheduler_id.to_owned(), scheduler.clone());
+                self.schedulers
+                    .insert(scheduler_id.to_owned(), scheduler.clone());
             }
 
             Ok(scheduler)
@@ -279,8 +279,10 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorServer<T,
             }
         };
 
-        let schedulers = self.schedulers.read().await.clone();
-        for (scheduler_id, mut scheduler) in schedulers {
+        for mut item in self.schedulers.iter_mut() {
+            let scheduler_id = item.key().clone();
+            let scheduler = item.value_mut();
+
             match scheduler
                 .heart_beat_from_executor(heartbeat_params.clone())
                 .await
@@ -681,6 +683,13 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorGrpc
         request: Request<StopExecutorParams>,
     ) -> Result<Response<StopExecutorResult>, Status> {
         let stop_request = request.into_inner();
+        if stop_request.executor_id != self.executor.metadata.id {
+            warn!(
+                "The executor id {} in request is different from {}. The stop request will be ignored",
+                stop_request.executor_id, self.executor.metadata.id
+            );
+            return Ok(Response::new(StopExecutorResult {}));
+        }
         let stop_reason = stop_request.reason;
         let force = stop_request.force;
         info!(
@@ -718,5 +727,20 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> ExecutorGrpc
         }
 
         Ok(Response::new(CancelTasksResult { cancelled }))
+    }
+
+    async fn remove_job_data(
+        &self,
+        request: Request<RemoveJobDataParams>,
+    ) -> Result<Response<RemoveJobDataResult>, Status> {
+        let job_id = request.into_inner().job_id;
+        let work_dir = self.executor.work_dir.clone();
+        let mut path = PathBuf::from(work_dir);
+        path.push(job_id.clone());
+        if path.is_dir() {
+            info!("Remove data for job {:?}", job_id);
+            std::fs::remove_dir_all(&path)?;
+        }
+        Ok(Response::new(RemoveJobDataResult {}))
     }
 }
