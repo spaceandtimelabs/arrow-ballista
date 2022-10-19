@@ -118,7 +118,7 @@ To run the benchmarks it is necessary to have at least one Ballista scheduler an
 To run the scheduler from source:
 
 ```bash
-cd $ARROW_HOME/ballista/rust/scheduler
+cd $ARROW_HOME/ballista/scheduler
 RUST_LOG=info cargo run --release
 ```
 
@@ -127,7 +127,7 @@ By default the scheduler will bind to `0.0.0.0` and listen on port 50050.
 To run the executor from source:
 
 ```bash
-cd $ARROW_HOME/ballista/rust/executor
+cd $ARROW_HOME/ballista/executor
 RUST_LOG=info cargo run --release
 ```
 
@@ -151,6 +151,7 @@ cargo run --release --bin tpch benchmark ballista --host localhost --port 50050 
 To start a Rust scheduler and executor using Docker Compose:
 
 ```bash
+cargo build --release
 docker-compose up --build
 ```
 

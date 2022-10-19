@@ -20,13 +20,13 @@
 use chrono::{DateTime, Duration, Utc};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration as Core_Duration;
+use std::time::{Duration as Core_Duration, Instant};
 use std::{env, io};
 
 use anyhow::{Context, Result};
 use arrow_flight::flight_service_server::FlightServiceServer;
 use ballista_executor::{execution_loop, executor_server};
-use log::{error, info};
+use log::{error, info, warn};
 use tempfile::TempDir;
 use tokio::fs::ReadDir;
 use tokio::signal;
@@ -94,9 +94,10 @@ async fn main() -> Result<()> {
     let grpc_port = opt.bind_grpc_port;
     let log_dir = opt.log_dir;
     let print_thread_info = opt.print_thread_info;
-
     let scheduler_name = format!("executor_{}_{}", bind_host, port);
 
+    let rust_log = env::var(EnvFilter::DEFAULT_ENV);
+    let log_filter = EnvFilter::new(rust_log.unwrap_or(special_mod_log_level));
     // File layer
     if let Some(log_dir) = log_dir {
         let log_file = tracing_appender::rolling::daily(log_dir, &scheduler_name);
@@ -105,18 +106,16 @@ async fn main() -> Result<()> {
             .with_thread_names(print_thread_info)
             .with_thread_ids(print_thread_info)
             .with_writer(log_file)
-            .with_env_filter(special_mod_log_level)
+            .with_env_filter(log_filter)
             .init();
     } else {
-        //Console layer
-        let rust_log = env::var(EnvFilter::DEFAULT_ENV);
-        let std_filter = EnvFilter::new(rust_log.unwrap_or_else(|_| "INFO".to_string()));
+        // Console layer
         tracing_subscriber::fmt()
             .with_ansi(true)
             .with_thread_names(print_thread_info)
             .with_thread_ids(print_thread_info)
             .with_writer(io::stdout)
-            .with_env_filter(std_filter)
+            .with_env_filter(log_filter)
             .init();
     }
 
@@ -192,6 +191,46 @@ async fn main() -> Result<()> {
     let connection = create_grpc_client_connection(scheduler_url, Some(tls))
         .await
         .context("Could not connect to scheduler")?;
+    let connect_timeout = opt.scheduler_connect_timeout_seconds as u64;
+    let connection = if connect_timeout == 0 {
+        create_grpc_client_connection(scheduler_url)
+            .await
+            .context("Could not connect to scheduler")
+    } else {
+        // this feature was added to support docker-compose so that we can have the executor
+        // wait for the scheduler to start, or at least run for 10 seconds before failing so
+        // that docker-compose's restart policy will restart the container.
+        let start_time = Instant::now().elapsed().as_secs();
+        let mut x = None;
+        while x.is_none()
+            && Instant::now().elapsed().as_secs() - start_time < connect_timeout
+        {
+            match create_grpc_client_connection(scheduler_url.clone())
+                .await
+                .context("Could not connect to scheduler")
+            {
+                Ok(conn) => {
+                    info!("Connected to scheduler at {}", scheduler_url);
+                    x = Some(conn);
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to connect to scheduler at {} ({}); retrying ...",
+                        scheduler_url, e
+                    );
+                    std::thread::sleep(time::Duration::from_millis(500));
+                }
+            }
+        }
+        match x {
+            Some(conn) => Ok(conn),
+            _ => Err(BallistaError::General(format!(
+                "Timed out attempting to connect to scheduler at {}",
+                scheduler_url
+            ))
+            .into()),
+        }
+    }?;
 
     let mut scheduler = SchedulerGrpcClient::new(connection);
 
