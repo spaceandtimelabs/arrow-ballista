@@ -17,20 +17,19 @@
 
 //! Execution functions
 
+use crate::{
+    command::{Command, OutputFormat},
+    helper::CliHelper,
+    print_options::PrintOptions,
+};
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::time::Instant;
 
 use ballista::prelude::{BallistaContext, Result};
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
-
-use crate::{
-    command::{Command, OutputFormat},
-    helper::CliHelper,
-    print_options::PrintOptions,
-};
 
 /// run and execute SQL statements and commands from a file, against a context with the given print options
 pub async fn exec_from_lines(

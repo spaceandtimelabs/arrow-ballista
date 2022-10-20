@@ -41,7 +41,7 @@ anyhow = "1"
 arrow-flight = { version = "24.0.0", features = ["flight-sql-experimental"] }
 async-recursion = "1.0.0"
 async-trait = "0.1.41"
-ballista-core = { path = "../core", version = "0.8.0" }
+ballista-core = { path = "../core", version = "0.8.0", features = ["s3"] }
 base64 = { version = "0.13", default-features = false }
 clap = { version = "3", features = ["derive", "cargo"] }
 configure_me = "0.4.0"
@@ -49,7 +49,7 @@ dashmap = "5.4.0"
 datafusion = "13.0.0"
 datafusion-proto = "13.0.0"
 etcd-client = { version = "0.9", optional = true }
-flatbuffers = { version = "2.1.2" }
+flatbuffers = { version = "22.9.29" }
 futures = "0.3"
 graphviz-rust = "0.3.0"
 http = "0.2"
@@ -57,7 +57,7 @@ http-body = "0.4"
 hyper = "0.14.4"
 itertools = "0.10.3"
 log = "0.4"
-object_store = "0.5.0"
+object_store = { git = "https://github.com/apache/arrow-rs.git", rev = "4df1f3c62f6d089d8cf02892168b9179e4c8c6fd" }
 parking_lot = "0.12"
 parse_arg = "0.1.3"
 prost = "0.11"
@@ -67,7 +67,7 @@ serde = { version = "1", features = ["derive"] }
 sled_package = { package = "sled", version = "0.34", optional = true }
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }
-tonic = "0.8"
+tonic = { version = "0.8", features = ["tls"] }
 tower = { version = "0.4" }
 tracing = "0.1.36"
 tracing-appender = "0.2.2"

@@ -18,6 +18,7 @@
 use crate::metrics::LoggingMetricsCollector;
 use crate::{execution_loop, executor::Executor, flight_service::BallistaFlightService};
 use arrow_flight::flight_service_server::FlightServiceServer;
+use ballista_core::error::BallistaError;
 use ballista_core::serde::scheduler::ExecutorSpecification;
 use ballista_core::serde::{AsExecutionPlan, BallistaCodec};
 use ballista_core::utils::{create_grpc_server, with_object_store_provider};
@@ -33,7 +34,7 @@ use log::info;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Identity, ServerTlsConfig};
 use uuid::Uuid;
 
 pub async fn new_standalone_executor<
@@ -84,10 +85,17 @@ pub async fn new_standalone_executor<
         concurrent_tasks,
     ));
 
+    let cert = tokio::fs::read("tls/server_public.pem").await?;
+    let key = tokio::fs::read("tls/server_private.pem").await?;
+
+    let identity = Identity::from_pem(cert, key);
+    let config = ServerTlsConfig::new().identity(identity);
+
     let service = BallistaFlightService::new();
     let server = FlightServiceServer::new(service);
     tokio::spawn(
-        create_grpc_server()
+        create_grpc_server(Some(config))
+            .map_err(|e| BallistaError::from(e))?
             .add_service(server)
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
                 listener,

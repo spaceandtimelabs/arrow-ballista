@@ -36,7 +36,7 @@ use futures::StreamExt;
 use log::{debug, error, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tonic::transport::Channel;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 
 type ExecutorClients = Arc<DashMap<String, ExecutorGrpcClient<Channel>>>;
 
@@ -300,7 +300,14 @@ impl ExecutorManager {
                 "http://{}:{}",
                 executor_metadata.host, executor_metadata.grpc_port
             );
-            let connection = create_grpc_client_connection(executor_url).await?;
+            let pem = tokio::fs::read("tls/ca-cert.pem").await?;
+            let ca = Certificate::from_pem(pem);
+
+            let tls = ClientTlsConfig::new()
+                .ca_certificate(ca)
+                .domain_name("example.com");
+            let connection =
+                create_grpc_client_connection(executor_url, Some(tls)).await?;
             let client = ExecutorGrpcClient::new(connection);
 
             {

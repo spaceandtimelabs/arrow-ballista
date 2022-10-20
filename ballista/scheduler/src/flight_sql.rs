@@ -44,6 +44,7 @@ use arrow_flight::flight_service_client::FlightServiceClient;
 use arrow_flight::sql::ProstMessageExt;
 use arrow_flight::SchemaAsIpc;
 use ballista_core::config::BallistaConfig;
+use ballista_core::error::BallistaError;
 use ballista_core::serde::protobuf;
 use ballista_core::serde::protobuf::action::ActionType::FetchPartition;
 use ballista_core::serde::protobuf::job_status;
@@ -62,6 +63,7 @@ use prost::Message;
 use tokio::time::sleep;
 use tonic::codegen::futures_core::Stream;
 use tonic::metadata::MetadataValue;
+use tonic::transport::{Certificate, ClientTlsConfig};
 use uuid::Uuid;
 
 pub struct FlightSqlServiceImpl {
@@ -442,15 +444,22 @@ impl FlightSqlService for FlightSqlServiceImpl {
 
             let addr = format!("http://{}:{}", host, port);
             println!("BallistaClient connecting to {}", addr);
-            let connection =
-                create_grpc_client_connection(addr.clone())
-                    .await
-                    .map_err(|e| {
-                        Status::internal(format!(
+
+            let pem = tokio::fs::read("tls/ca-cert.pem").await?;
+            let ca = Certificate::from_pem(pem);
+
+            let tls = ClientTlsConfig::new()
+                .ca_certificate(ca)
+                .domain_name("example.com");
+
+            let connection = create_grpc_client_connection(addr.clone(), Some(tls))
+                .await
+                .map_err(|e| {
+                    Status::internal(format!(
                         "Error connecting to Ballista scheduler or executor at {}: {:?}",
                         addr, e
                     ))
-                    })?;
+                })?;
             let mut flight_client = FlightServiceClient::new(connection);
             let buf = action.encode_to_vec();
             let request = Request::new(Ticket { ticket: buf });

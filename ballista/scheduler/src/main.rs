@@ -25,7 +25,7 @@ use futures::future::{self, Either, TryFutureExt};
 use hyper::{server::conn::AddrStream, service::make_service_fn, Server};
 use std::convert::Infallible;
 use std::{env, io, net::SocketAddr, sync::Arc};
-use tonic::transport::server::Connected;
+use tonic::transport::{server::Connected, Identity, ServerTlsConfig};
 use tower::Service;
 
 use ballista_core::BALLISTA_VERSION;
@@ -44,6 +44,7 @@ use ballista_scheduler::scheduler_server::SchedulerServer;
 use ballista_scheduler::state::backend::{StateBackend, StateBackendClient};
 
 use ballista_core::config::TaskSchedulingPolicy;
+use ballista_core::error::BallistaError;
 use ballista_core::serde::BallistaCodec;
 use ballista_core::utils::default_session_builder;
 use log::info;
@@ -100,6 +101,12 @@ async fn start_server(
 
     scheduler_server.init().await?;
 
+    let cert = tokio::fs::read("tls/server_public.pem").await?;
+    let key = tokio::fs::read("tls/server_private.pem").await?;
+
+    let identity = Identity::from_pem(cert, key);
+    let config = ServerTlsConfig::new().identity(identity);
+
     Server::bind(&addr)
         .serve(make_service_fn(move |request: &AddrStream| {
             let scheduler_grpc_server =
@@ -107,7 +114,9 @@ async fn start_server(
 
             let keda_scaler = ExternalScalerServer::new(scheduler_server.clone());
 
-            let tonic_builder = create_grpc_server()
+            let tonic_builder = create_grpc_server(Some(config.clone()))
+                .map_err(|e| BallistaError::from(e))
+                .unwrap()
                 .add_service(scheduler_grpc_server)
                 .add_service(keda_scaler);
 
