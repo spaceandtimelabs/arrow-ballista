@@ -60,7 +60,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, pin::Pin};
 use tonic::codegen::StdError;
-use tonic::transport::{Channel, Error, Server};
+use tonic::transport::{Channel, ClientTlsConfig, Error, Server, ServerTlsConfig};
 use url::Url;
 
 /// Default session builder using the provided configuration
@@ -378,6 +378,7 @@ impl<T: 'static + AsLogicalPlan> QueryPlanner for BallistaQueryPlanner<T> {
 
 pub async fn create_grpc_client_connection<D>(
     dst: D,
+    tls: Option<ClientTlsConfig>,
 ) -> std::result::Result<Channel, Error>
 where
     D: std::convert::TryInto<tonic::transport::Endpoint>,
@@ -392,17 +393,28 @@ where
         .http2_keep_alive_interval(Duration::from_secs(300))
         .keep_alive_timeout(Duration::from_secs(20))
         .keep_alive_while_idle(true);
-    endpoint.connect().await
+    match tls {
+        Some(conf) => endpoint.tls_config(conf),
+        None => Ok(endpoint),
+    }?
+    .connect()
+    .await
 }
 
-pub fn create_grpc_server() -> Server {
-    Server::builder()
+pub fn create_grpc_server(
+    tls: Option<ServerTlsConfig>,
+) -> std::result::Result<Server, Error> {
+    let server = Server::builder()
         .timeout(Duration::from_secs(20))
         // Disable Nagle's Algorithm since we don't want packets to wait
         .tcp_nodelay(true)
         .tcp_keepalive(Option::Some(Duration::from_secs(3600)))
         .http2_keepalive_interval(Option::Some(Duration::from_secs(300)))
-        .http2_keepalive_timeout(Option::Some(Duration::from_secs(20)))
+        .http2_keepalive_timeout(Option::Some(Duration::from_secs(20)));
+    match tls {
+        Some(conf) => server.tls_config(conf),
+        None => Ok(server),
+    }
 }
 
 pub fn collect_plan_metrics(plan: &dyn ExecutionPlan) -> Vec<MetricsSet> {

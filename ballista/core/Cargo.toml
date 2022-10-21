@@ -67,7 +67,7 @@ sqlparser = "0.25"
 sys-info = "0.9.0"
 tokio = "1.0"
 tokio-stream = { version = "0.1", features = ["net"] }
-tonic = "0.8"
+tonic = { version = "0.8", features = ["tls"] }
 url = "2.2"
 uuid = { version = "1.0", features = ["v4"] }
 walkdir = "2.3.2"

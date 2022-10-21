@@ -99,3 +99,6 @@ dev/dist
 
 # logs
 logs/
+
+# generated files
+ballista/rust
