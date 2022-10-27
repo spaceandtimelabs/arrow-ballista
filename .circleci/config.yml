@@ -38,8 +38,8 @@ jobs:
           export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           export PATH=/root/.cargo/bin:$PATH
-          cargo build --release --bin ballista-scheduler --features flight-sql
-          cargo build --release --bin ballista-executor
+          cargo build --release --bin ballista-scheduler --features flight-sql,delta
+          cargo build --release --bin ballista-executor --features delta
       - persist_to_workspace:
           root: /root
           paths:
@@ -58,13 +58,13 @@ jobs:
           apt-get -y install nodejs npm
           export DOCKER_TAG=$(cat /root/project/docker-tag.txt)
           npm install -g yarn
-          cd ballista/ui/scheduler
+          cd ballista/scheduler/ui
           yarn install
           CI=false yarn build # prevent warnings from being treated as errors because we have them
       - persist_to_workspace:
           root: /root
           paths:
-            - project/ballista/ui/scheduler/build
+            - project/ballista/scheduler/ui/build
 
   deploy_docker:
     docker:
