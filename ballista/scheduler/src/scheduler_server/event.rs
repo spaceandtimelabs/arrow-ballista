@@ -21,7 +21,6 @@ use datafusion::logical_expr::LogicalPlan;
 
 use crate::state::execution_graph::RunningTaskInfo;
 use ballista_core::serde::protobuf::TaskStatus;
-use datafusion::logical_expr::LogicalPlan;
 use datafusion::prelude::SessionContext;
 use std::sync::Arc;
 

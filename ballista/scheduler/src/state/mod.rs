@@ -35,13 +35,12 @@ use crate::state::execution_graph::TaskDescription;
 use ballista_core::error::{BallistaError, Result};
 use ballista_core::serde::protobuf::TaskStatus;
 use ballista_core::serde::{AsExecutionPlan, BallistaCodec};
-use datafusion::logical_expr::LogicalPlan;
+use ballista_core::utils::SessionBuilder;
 use datafusion::physical_plan::display::DisplayableExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::logical_plan::AsLogicalPlan;
 use log::{debug, error, info};
 use prost::Message;
-use ballista_core::utils::SessionBuilder;
 
 pub mod backend;
 pub mod execution_graph;

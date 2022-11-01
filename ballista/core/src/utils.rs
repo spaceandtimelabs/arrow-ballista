@@ -65,7 +65,6 @@ use std::{fs::File, pin::Pin};
 use tonic::codegen::StdError;
 use tonic::transport::{Channel, Error, Server};
 use url::Url;
-use datafusion::physical_plan::joins::HashJoinExec;
 
 pub trait SessionBuilder: Send + Sync {
     fn build(&self, config: SessionConfig) -> crate::error::Result<SessionState>;
@@ -335,7 +334,9 @@ pub fn create_df_ctx_with_ballista_query_planner<T: 'static + AsLogicalPlan>(
     extension_codec: Arc<dyn LogicalExtensionCodec>,
 ) -> SessionContext {
     let planner: BallistaQueryPlanner<T> = BallistaQueryPlanner::with_extension(
-        scheduler_url, config.clone(), extension_codec
+        scheduler_url,
+        config.clone(),
+        extension_codec,
     );
 
     let session_config = SessionConfig::new()

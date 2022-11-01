@@ -43,7 +43,6 @@ use datafusion::physical_plan::{ColumnStatistics, PhysicalExpr, Statistics};
 use datafusion_proto::from_proto::from_proto_binary_op;
 use object_store::path::Path;
 use object_store::ObjectMeta;
-use datafusion::config::ConfigOptions;
 use parking_lot::RwLock;
 
 use crate::serde::protobuf::physical_expr_node::ExprType;
@@ -412,7 +411,6 @@ impl TryInto<FileScanConfig> for &protobuf::FileScanExecConf {
             projection,
             limit: self.limit.as_ref().map(|sl| sl.limit as usize),
             table_partition_cols: vec![],
-            config_options: ConfigOptions::new().into_shareable(),
         })
     }
 }

@@ -15,25 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::config::SlotsPolicy;
 use crate::{
     scheduler_server::SchedulerServer, state::backend::standalone::StandaloneClient,
 };
 use ballista_core::config::TaskSchedulingPolicy;
 use ballista_core::serde::protobuf::PhysicalPlanNode;
-use ballista_core::serde::{BallistaCodec};
+use ballista_core::serde::BallistaCodec;
 use ballista_core::utils::{create_grpc_server, TableProviderSessionBuilder};
 use ballista_core::{
     error::Result, serde::protobuf::scheduler_grpc_server::SchedulerGrpcServer,
     BALLISTA_VERSION,
 };
 use datafusion::datasource::datasource::TableProviderFactory;
+use datafusion_proto::logical_plan::{LogicalExtensionCodec, PhysicalExtensionCodec};
 use datafusion_proto::protobuf::LogicalPlanNode;
 use log::info;
 use std::collections::HashMap;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
-use datafusion_proto::logical_plan::{LogicalExtensionCodec, PhysicalExtensionCodec};
-use crate::config::SlotsPolicy;
 
 pub async fn new_standalone_scheduler(
     table_factories: HashMap<String, Arc<dyn TableProviderFactory>>,

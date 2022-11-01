@@ -18,11 +18,11 @@
 //! Ballista Rust executor binary.
 
 use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration as Core_Duration, Instant};
 use std::{env, io};
-use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use arrow_flight::flight_service_server::FlightServiceServer;
@@ -53,16 +53,18 @@ use ballista_executor::shutdown::Shutdown;
 use ballista_executor::shutdown::ShutdownNotifier;
 use ballista_executor::terminate;
 use config::prelude::*;
+use datafusion::datasource::datasource::TableProviderFactory;
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion_proto::protobuf::LogicalPlanNode;
+#[cfg(feature = "delta")]
+use deltalake::delta_datafusion::{
+    DeltaLogicalCodec, DeltaPhysicalCodec, DeltaTableFactory,
+};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing_subscriber::EnvFilter;
-use datafusion::datasource::datasource::TableProviderFactory;
-#[cfg(feature = "delta")]
-use deltalake::delta_datafusion::{DeltaTableFactory, DeltaLogicalCodec, DeltaPhysicalCodec};
 
 #[macro_use]
 extern crate configure_me;
@@ -168,7 +170,7 @@ async fn main() -> Result<()> {
     };
 
     let config = with_object_store_provider(
-        RuntimeConfig::new().with_temp_file_path(work_dir.clone())
+        RuntimeConfig::new().with_temp_file_path(work_dir.clone()),
     );
     #[cfg(feature = "delta")]
     let config = {
@@ -235,9 +237,13 @@ async fn main() -> Result<()> {
     let mut scheduler = SchedulerGrpcClient::new(connection);
 
     #[cfg(feature = "delta")]
-    let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> = BallistaCodec::new(Arc::new(DeltaLogicalCodec {}), Arc::new(DeltaPhysicalCodec {}));
+    let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> = BallistaCodec::new(
+        Arc::new(DeltaLogicalCodec {}),
+        Arc::new(DeltaPhysicalCodec {}),
+    );
     #[cfg(not(feature = "delta"))]
-    let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> = BallistaCodec::default();
+    let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> =
+        BallistaCodec::default();
 
     let scheduler_policy = opt.task_scheduling_policy;
     let cleanup_ttl = opt.executor_cleanup_ttl;

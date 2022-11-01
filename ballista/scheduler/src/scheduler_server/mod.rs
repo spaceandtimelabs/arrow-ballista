@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datafusion::logical_expr::LogicalPlan;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use datafusion::logical_expr::LogicalPlan;
 
 use ballista_core::config::TaskSchedulingPolicy;
 use ballista_core::error::Result;
@@ -25,14 +25,12 @@ use ballista_core::event_loop::{EventLoop, EventSender};
 use ballista_core::serde::protobuf::{StopExecutorParams, TaskStatus};
 use ballista_core::serde::{AsExecutionPlan, BallistaCodec};
 
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::LogicalPlan;
-use datafusion::prelude::{SessionConfig, SessionContext};
+use datafusion::prelude::SessionContext;
 use datafusion_proto::logical_plan::AsLogicalPlan;
 
 use crate::config::SlotsPolicy;
-use log::{error, warn};
 use ballista_core::utils::{DefaultSessionBuilder, SessionBuilder};
+use log::{error, warn};
 
 use crate::scheduler_server::event::QueryStageSchedulerEvent;
 use crate::scheduler_server::query_stage_scheduler::QueryStageScheduler;
@@ -74,6 +72,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
         let session_builder = Arc::new(DefaultSessionBuilder {});
         SchedulerServer::new_with_policy(
             scheduler_name,
+            config,
             TaskSchedulingPolicy::PullStaged,
             SlotsPolicy::Bias,
             codec,
@@ -120,7 +119,7 @@ impl<T: 'static + AsLogicalPlan, U: 'static + AsExecutionPlan> SchedulerServer<T
     ) -> Self {
         let state = Arc::new(SchedulerState::new(
             config,
-            default_session_builder,
+            session_builder,
             codec,
             scheduler_name.clone(),
             slots_policy,

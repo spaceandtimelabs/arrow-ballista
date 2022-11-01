@@ -20,19 +20,21 @@
 
 use crate::{error::BallistaError, serde::scheduler::Action as BallistaAction};
 use arrow_flight::sql::ProstMessageExt;
+use datafusion::error::DataFusionError;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::execution::FunctionRegistry;
 use datafusion::physical_plan::joins::utils::JoinSide;
 use datafusion::physical_plan::ExecutionPlan;
-use datafusion_proto::logical_plan::{AsLogicalPlan, DefaultLogicalExtensionCodec, LogicalExtensionCodec, PhysicalExtensionCodec};
+use datafusion_proto::logical_plan::{
+    AsLogicalPlan, DefaultLogicalExtensionCodec, LogicalExtensionCodec,
+    PhysicalExtensionCodec,
+};
 use prost::bytes::BufMut;
 use prost::Message;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{convert::TryInto, io::Cursor};
-use datafusion::error::DataFusionError;
-use datafusion::physical_plan::joins::utils::JoinSide;
 
 pub use generated::ballista as protobuf;
 

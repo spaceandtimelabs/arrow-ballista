@@ -54,8 +54,6 @@ use datafusion::physical_plan::windows::{create_window_expr, WindowAggExec};
 use datafusion::physical_plan::{
     AggregateExpr, ExecutionPlan, Partitioning, PhysicalExpr, WindowExpr,
 };
-use datafusion::physical_plan::joins::{CrossJoinExec, HashJoinExec, PartitionMode};
-use datafusion::physical_plan::joins::utils::{ColumnIndex, JoinFilter};
 use datafusion_proto::from_proto::parse_expr;
 use datafusion_proto::logical_plan::PhysicalExtensionCodec;
 use parking_lot::RwLock;
@@ -72,9 +70,7 @@ use crate::serde::protobuf::physical_plan_node::PhysicalPlanType;
 use crate::serde::protobuf::repartition_exec_node::PartitionMethod;
 use crate::serde::protobuf::{PhysicalExtensionNode, PhysicalPlanNode};
 use crate::serde::scheduler::PartitionLocation;
-use crate::serde::{
-    byte_to_string, proto_error, protobuf, str_to_byte, AsExecutionPlan,
-};
+use crate::serde::{byte_to_string, proto_error, protobuf, str_to_byte, AsExecutionPlan};
 use crate::{convert_required, into_physical_plan, into_required};
 
 pub mod from_proto;
@@ -1273,7 +1269,6 @@ fn decode_scan_config(
         projection,
         limit: proto.limit.as_ref().map(|sl| sl.limit as usize),
         table_partition_cols: vec![],
-        config_options: ConfigOptions::new().into_shareable(),
     })
 }
 

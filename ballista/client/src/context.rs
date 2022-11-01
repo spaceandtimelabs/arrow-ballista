@@ -24,7 +24,9 @@ use std::sync::Arc;
 
 use ballista_core::config::BallistaConfig;
 use ballista_core::serde::protobuf::scheduler_grpc_client::SchedulerGrpcClient;
-use ballista_core::serde::protobuf::{ExecuteQueryParams, KeyValuePair, PhysicalPlanNode};
+use ballista_core::serde::protobuf::{
+    ExecuteQueryParams, KeyValuePair, PhysicalPlanNode,
+};
 use ballista_core::utils::{
     create_df_ctx_with_ballista_query_planner, create_grpc_client_connection,
 };
@@ -41,7 +43,9 @@ use datafusion::prelude::{
 };
 use datafusion::sql::parser::{DFParser, Statement as DFStatement};
 use datafusion::sql::sqlparser::ast::Statement;
-use datafusion_proto::logical_plan::{DefaultLogicalExtensionCodec, LogicalExtensionCodec, PhysicalExtensionCodec};
+use datafusion_proto::logical_plan::{
+    DefaultLogicalExtensionCodec, LogicalExtensionCodec, PhysicalExtensionCodec,
+};
 
 struct BallistaContextState {
     /// Ballista configuration
@@ -152,7 +156,7 @@ impl BallistaContext {
         let addr = ballista_scheduler::standalone::new_standalone_scheduler(
             table_factories.clone(),
             logical_codec.clone(),
-            physical_codec.clone()
+            physical_codec.clone(),
         )
         .await?;
         let scheduler_url = format!("http://localhost:{}", addr.port());
@@ -199,13 +203,10 @@ impl BallistaContext {
             )
         };
 
-        let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> = BallistaCodec::new(logical_codec, physical_codec);
-        ballista_executor::new_standalone_executor(
-            scheduler,
-            concurrent_tasks,
-            codec,
-        )
-        .await?;
+        let codec: BallistaCodec<LogicalPlanNode, PhysicalPlanNode> =
+            BallistaCodec::new(logical_codec, physical_codec);
+        ballista_executor::new_standalone_executor(scheduler, concurrent_tasks, codec)
+            .await?;
 
         let state =
             BallistaContextState::new("localhost".to_string(), addr.port(), config);
@@ -458,15 +459,15 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
+    use ballista_core::serde::DefaultPhysicalExtensionCodec;
     use datafusion::arrow::util::pretty::pretty_format_batches;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
+    use datafusion_proto::logical_plan::DefaultLogicalExtensionCodec;
+    use deltalake::delta_datafusion::DeltaPhysicalCodec;
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use ballista_core::serde::DefaultPhysicalExtensionCodec;
-    use datafusion_proto::logical_plan::DefaultLogicalExtensionCodec;
-    use deltalake::delta_datafusion::DeltaPhysicalCodec;
 
     #[tokio::test]
     #[cfg(feature = "standalone")]
@@ -489,14 +490,22 @@ mod tests {
     #[cfg(all(feature = "standalone", feature = "delta"))]
     async fn test_register_table_factory() {
         use super::*;
-        use deltalake::delta_datafusion::DeltaTableFactory;
         use deltalake::delta_datafusion::DeltaLogicalCodec;
+        use deltalake::delta_datafusion::DeltaTableFactory;
 
         let factory: Arc<(dyn TableProviderFactory + 'static)> =
             Arc::new(DeltaTableFactory {});
         let factories = HashMap::from([("deltatable".to_string(), factory)]);
         let cfg = BallistaConfig::new().unwrap();
-        let context = BallistaContext::standalone(&cfg, 1, factories, Arc::new(DeltaLogicalCodec {}), Arc::new(DeltaPhysicalCodec {})).await.unwrap();
+        let context = BallistaContext::standalone(
+            &cfg,
+            1,
+            factories,
+            Arc::new(DeltaLogicalCodec {}),
+            Arc::new(DeltaPhysicalCodec {}),
+        )
+        .await
+        .unwrap();
 
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("testdata/delta-0.8.0");
@@ -524,7 +533,7 @@ mod tests {
             "| 1     |",
             "| 2     |",
             "| 4     |",
-            "+-------+"
+            "+-------+",
         ];
         assert_eq!(
             expected1,
@@ -549,7 +558,7 @@ mod tests {
             1,
             HashMap::new(),
             Arc::new(DefaultLogicalExtensionCodec {}),
-            Arc::new(DefaultPhysicalExtensionCodec {})
+            Arc::new(DefaultPhysicalExtensionCodec {}),
         )
         .await
         .unwrap();
@@ -600,9 +609,15 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &config,
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {}),
+        )
+        .await
+        .unwrap();
 
         let data = "Jorge,2018-12-13T12:12:10.011Z\n\
                     Andrew,2018-11-13T17:11:10.011Z";
@@ -654,9 +669,15 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &config,
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {}),
+        )
+        .await
+        .unwrap();
 
         context
             .register_parquet(
@@ -725,9 +746,15 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &config,
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {}),
+        )
+        .await
+        .unwrap();
 
         let sql = "select EXTRACT(year FROM to_timestamp('2020-09-08T12:13:14+00:00'));";
 
@@ -747,9 +774,15 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &config,
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {}),
+        )
+        .await
+        .unwrap();
 
         let df = context
             .sql("SELECT 1 as NUMBER union SELECT 1 as NUMBER;")
@@ -811,9 +844,15 @@ mod tests {
             .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
             .build()
             .unwrap();
-        let context = BallistaContext::standalone(&config, 1, HashMap::new(), Arc::new(DefaultLogicalExtensionCodec {}), Arc::new(DefaultPhysicalExtensionCodec {}))
-            .await
-            .unwrap();
+        let context = BallistaContext::standalone(
+            &config,
+            1,
+            HashMap::new(),
+            Arc::new(DefaultLogicalExtensionCodec {}),
+            Arc::new(DefaultPhysicalExtensionCodec {}),
+        )
+        .await
+        .unwrap();
 
         context
             .register_parquet(
