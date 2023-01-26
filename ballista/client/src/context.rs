@@ -446,6 +446,7 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
+    use arrow_flight::FlightData;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
 
@@ -705,6 +706,45 @@ mod tests {
                 .lines()
                 .collect::<Vec<&str>>()
         );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "standalone")]
+    async fn test_flight_sql() {
+        use crate::context::BallistaContext;
+        use ballista_core::config::{
+            BallistaConfigBuilder, BALLISTA_WITH_INFORMATION_SCHEMA,
+        };
+        use datafusion::arrow::util::pretty::pretty_format_batches;
+
+        let config = BallistaConfigBuilder::default()
+            .set(BALLISTA_WITH_INFORMATION_SCHEMA, "true")
+            .build()
+            .unwrap();
+        let context = BallistaContext::standalone(&config, 1).await.unwrap();
+        let host = context.state.lock().scheduler_host.clone();
+        let port = context.state.lock().scheduler_port;
+        let path = format!("http://{host}:{port}");
+
+        let mut client = FlightSqlServiceClient::new(path).await.unwrap();
+        let token = client.handshake("admin", "password").await.unwrap();
+        println!("Auth succeeded with token: {:?}", token);
+        let mut stmt = client.prepare("select 1;".to_string()).await.unwrap();
+        let flight_info = stmt.execute().await.unwrap();
+        let ticket = flight_info.endpoint[0].ticket.as_ref().unwrap().clone();
+        let flight_data = client.do_get(ticket).await.unwrap();
+        let flight_data: Vec<FlightData> = flight_data.try_collect().await.unwrap();
+        let batches = flight_data_to_batches(&flight_data).unwrap();
+        let res = pretty_format_batches(batches.as_slice()).unwrap();
+        let expected = r#"
++-------------------+
+| salutation        |
++-------------------+
+| Hello, FlightSQL! |
++-------------------+"#
+            .trim()
+            .to_string();
+        assert_eq!(res.to_string(), expected);
     }
 
     #[tokio::test]

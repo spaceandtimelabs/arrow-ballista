@@ -29,7 +29,9 @@ use datafusion_proto::protobuf::LogicalPlanNode;
 use datafusion_proto::protobuf::PhysicalPlanNode;
 use log::info;
 use std::{net::SocketAddr, sync::Arc};
+use arrow_flight::flight_service_server::FlightServiceServer;
 use tokio::net::TcpListener;
+use crate::flight_sql::FlightSqlServiceImpl;
 
 pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
     let backend = Arc::new(SledClient::try_new_temporary()?);
@@ -54,12 +56,17 @@ pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
         "Ballista v{} Rust Scheduler listening on {:?}",
         BALLISTA_VERSION, addr
     );
-    tokio::spawn(
-        create_grpc_server()
-            .add_service(server)
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
+    tokio::spawn(async move {
+        let tonic_builder = create_grpc_server()
+            .add_service(server);
+        #[cfg(feature = "flight-sql")]
+            let tonic_builder = tonic_builder.add_service(FlightServiceServer::new(
+            FlightSqlServiceImpl::new(scheduler_server.clone()),
+        ));
+        tonic_builder.serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
                 listener,
-            )),
+            ))
+        }
     );
 
     Ok(addr)
