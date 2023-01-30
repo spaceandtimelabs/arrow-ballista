@@ -16,9 +16,11 @@
 // under the License.
 
 use crate::config::SchedulerConfig;
+use crate::flight_sql::FlightSqlServiceImpl;
 use crate::metrics::default_metrics_collector;
 use crate::state::backend::cluster::DefaultClusterState;
 use crate::{scheduler_server::SchedulerServer, state::backend::sled::SledClient};
+use arrow_flight::flight_service_server::FlightServiceServer;
 use ballista_core::serde::BallistaCodec;
 use ballista_core::utils::create_grpc_server;
 use ballista_core::{
@@ -29,9 +31,7 @@ use datafusion_proto::protobuf::LogicalPlanNode;
 use datafusion_proto::protobuf::PhysicalPlanNode;
 use log::info;
 use std::{net::SocketAddr, sync::Arc};
-use arrow_flight::flight_service_server::FlightServiceServer;
 use tokio::net::TcpListener;
-use crate::flight_sql::FlightSqlServiceImpl;
 
 pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
     let backend = Arc::new(SledClient::try_new_temporary()?);
@@ -57,17 +57,15 @@ pub async fn new_standalone_scheduler() -> Result<SocketAddr> {
         BALLISTA_VERSION, addr
     );
     tokio::spawn(async move {
-        let tonic_builder = create_grpc_server()
-            .add_service(server);
+        let tonic_builder = create_grpc_server().add_service(server);
         #[cfg(feature = "flight-sql")]
-            let tonic_builder = tonic_builder.add_service(FlightServiceServer::new(
+        let tonic_builder = tonic_builder.add_service(FlightServiceServer::new(
             FlightSqlServiceImpl::new(scheduler_server.clone()),
         ));
-        tonic_builder.serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
-                listener,
-            ))
-        }
-    );
+        tonic_builder
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+    });
 
     Ok(addr)
 }

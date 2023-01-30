@@ -315,8 +315,7 @@ impl BallistaContext {
         }
 
         if let DFStatement::Statement(s) = &statements[0] {
-            let st: &Statement = s;
-            match st {
+            match (**s).clone() {
                 Statement::ShowVariable { .. } => {
                     is_show_variable = true;
                 }
@@ -446,9 +445,12 @@ impl BallistaContext {
 
 #[cfg(test)]
 mod tests {
+    use arrow_flight::sql::client::FlightSqlServiceClient;
+    use arrow_flight::utils::flight_data_to_batches;
     use arrow_flight::FlightData;
     #[cfg(feature = "standalone")]
     use datafusion::datasource::listing::ListingTableUrl;
+    use futures::TryStreamExt;
 
     #[tokio::test]
     #[cfg(feature = "standalone")]
@@ -724,9 +726,11 @@ mod tests {
         let context = BallistaContext::standalone(&config, 1).await.unwrap();
         let host = context.state.lock().scheduler_host.clone();
         let port = context.state.lock().scheduler_port;
-        let path = format!("http://{host}:{port}");
+        let url = format!("http://{host}:{port}");
+        let endpoint = tonic::transport::Endpoint::new(url).unwrap();
+        let channel = endpoint.connect().await.unwrap();
 
-        let mut client = FlightSqlServiceClient::new(path).await.unwrap();
+        let mut client = FlightSqlServiceClient::new(channel);
         let token = client.handshake("admin", "password").await.unwrap();
         println!("Auth succeeded with token: {:?}", token);
         let mut stmt = client.prepare("select 1;".to_string()).await.unwrap();
